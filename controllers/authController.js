@@ -1,33 +1,42 @@
-// backend/controllers/authController.js
-const User = require('../models/User');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
+const User = require('../models/User'); // Verifique se o caminho do modelo está correto
 
+// Controlador de Login
 exports.login = async (req, res) => {
-  const { email, password } = req.body;
+    const { email, password } = req.body;
 
-  const user = await User.findOne({ email });
-  if (!user) return res.status(401).json({ message: 'Usuário não encontrado' });
+    try {
+        // Verificar se o usuário existe
+        const user = await User.findOne({ where: { email } });
+        if (!user) {
+            console.log(`Usuário não encontrado: ${email}`);
+            return res.status(401).json({ message: 'Credenciais inválidas' });
+        }
 
-  const isMatch = await bcrypt.compare(password, user.password);
-  if (!isMatch) return res.status(401).json({ message: 'Senha incorreta' });
+        // Log do hash da senha armazenada (somente para depuração)
+        console.log(`Hash da senha armazenada: ${user.password}`);
 
-  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '1h' });
+        // Verificar a senha usando bcrypt
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+        if (!isPasswordValid) {
+            console.log(`Senha incorreta para o usuário: ${email}`);
+            return res.status(401).json({ message: 'Credenciais inválidas' });
+        }
 
-  res.json({ token });
-};
+        // Log de sucesso na autenticação
+        console.log(`Login bem-sucedido para o usuário: ${email}`);
 
-exports.createUser = async (req, res) => {
-  const { name, email, password } = req.body;
-
-  const hashedPassword = await bcrypt.hash(password, 10);
-
-  const newUser = new User({
-    name,
-    email,
-    password: hashedPassword,
-  });
-
-  await newUser.save();
-  res.status(201).json(newUser);
+        // Retornar resposta com informações do usuário
+        res.status(200).json({
+            message: 'Login realizado com sucesso',
+            user: {
+                id: user.id,
+                email: user.email,
+                name: user.name
+            }
+        });
+    } catch (err) {
+        console.error('Erro ao realizar login:', err);
+        res.status(500).json({ message: 'Erro interno no servidor. Tente novamente mais tarde.' });
+    }
 };

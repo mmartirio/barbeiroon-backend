@@ -1,11 +1,43 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const sequelize = require('../config/db'); // Ajuste o caminho conforme necessário
 
-const appointmentSchema = new mongoose.Schema({
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  serviceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Service', required: true },
-  professionalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Professional', required: true },
-  date: { type: Date, required: true },
-  status: { type: String, default: 'Scheduled' },
+const Appointment = sequelize.define('Appointment', {
+    userId: {
+        type: DataTypes.INTEGER, // Supondo que userId seja um inteiro
+        allowNull: false,
+        references: {
+            model: 'Users', // Nome da tabela referenciada no banco de dados
+            key: 'id',
+        },
+    },
+    serviceId: {
+        type: DataTypes.INTEGER, // Supondo que serviceId seja um inteiro
+        allowNull: false,
+        references: {
+            model: 'Services', // Nome da tabela referenciada no banco de dados
+            key: 'id',
+        },
+    },
+    professionalId: {
+        type: DataTypes.INTEGER, // Supondo que professionalId seja um inteiro
+        allowNull: false,
+        references: {
+            model: 'Professionals', // Nome da tabela referenciada no banco de dados
+            key: 'id',
+        },
+    },
+    date: {
+        type: DataTypes.DATE,
+        allowNull: false,
+    },
+    status: {
+        type: DataTypes.STRING,
+        defaultValue: 'Scheduled',
+    },
+}, {
+    // Opções adicionais, se necessário
+    tableName: 'Appointments', // Nome da tabela no banco de dados
+    timestamps: true, // Adiciona colunas createdAt e updatedAt
 });
 
-module.exports = mongoose.model('Appointment', appointmentSchema);
+module.exports = Appointment;
