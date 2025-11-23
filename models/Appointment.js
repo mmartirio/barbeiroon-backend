@@ -6,7 +6,7 @@ const Appointment = sequelize.define('Appointment', {
         type: DataTypes.INTEGER, // Supondo que userId seja um inteiro
         allowNull: false,
         references: {
-            model: 'Users', // Nome da tabela referenciada no banco de dados
+            model: 'user', // Nome da tabela referenciada no banco de dados (corrigido para minúsculo e singular)
             key: 'id',
         },
     },
@@ -14,7 +14,7 @@ const Appointment = sequelize.define('Appointment', {
         type: DataTypes.INTEGER, // Supondo que serviceId seja um inteiro
         allowNull: false,
         references: {
-            model: 'Services', // Nome da tabela referenciada no banco de dados
+            model: 'service', // Nome da tabela referenciada no banco de dados (corrigido para minúsculo e singular)
             key: 'id',
         },
     },
@@ -22,7 +22,7 @@ const Appointment = sequelize.define('Appointment', {
         type: DataTypes.INTEGER, // Supondo que professionalId seja um inteiro
         allowNull: false,
         references: {
-            model: 'Professionals', // Nome da tabela referenciada no banco de dados
+            model: 'professional', // Nome da tabela referenciada no banco de dados (corrigido para minúsculo e singular)
             key: 'id',
         },
     },
@@ -34,10 +34,19 @@ const Appointment = sequelize.define('Appointment', {
         type: DataTypes.STRING,
         defaultValue: 'Scheduled',
     },
+    tenantId: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        references: {
+            model: 'tenants',
+            key: 'id',
+        },
+    },
 }, {
     // Opções adicionais, se necessário
-    tableName: 'Appointments', // Nome da tabela no banco de dados
+    tableName: 'appointment', // Nome da tabela no banco de dados (corrigido para minúsculo e singular)
     timestamps: true, // Adiciona colunas createdAt e updatedAt
+    freezeTableName: true, // Garante que o nome da tabela será exatamente 'appointment'
 });
 
 module.exports = Appointment;

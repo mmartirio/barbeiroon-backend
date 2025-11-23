@@ -26,10 +26,18 @@ User.init({
         type: DataTypes.ENUM('cliente', 'barbeiro', 'admin'),
         defaultValue: 'cliente',
     },
+    tenantId: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        references: {
+            model: 'tenants',
+            key: 'id',
+        },
+    },
 }, {
     sequelize,
     modelName: 'User',
-    tableName: 'user', // Nome da tabela no banco de dados
+    tableName: 'user', // Nome da tabela no banco de dados (já está correto)
     timestamps: false, // Se quiser timestamps automáticos, mantenha 'true'; se não quiser, defina como 'false'
 });
 

@@ -1,42 +1,43 @@
-const bcrypt = require('bcrypt');
-const User = require('../models/User'); // Verifique se o caminho do modelo está correto
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+const Tenant = require('../models/Tenant');
 
-// Controlador de Login
+// Controlador de Login Multi-Tenant
 exports.login = async (req, res) => {
     const { email, password } = req.body;
-
     try {
-        // Verificar se o usuário existe
-        const user = await User.findOne({ where: { email } });
+        // Busca o usuário pelo e-mail, garantindo que o campo name seja retornado
+        const user = await User.findOne({ 
+            where: { email }, 
+            attributes: ['id', 'name', 'email', 'password', 'role', 'tenantId']
+        });
         if (!user) {
-            console.log(`Usuário não encontrado: ${email}`);
-            return res.status(401).json({ message: 'Credenciais inválidas' });
+            return res.status(404).json({ message: 'Usuário não encontrado.' });
         }
-
-        // Log do hash da senha armazenada (somente para depuração)
-        console.log(`Hash da senha armazenada: ${user.password}`);
-
-        // Verificar a senha usando bcrypt
+        // Busca o tenantId do usuário
+        const tenantId = user.tenantId;
+        if (!tenantId) {
+            return res.status(400).json({ message: 'Usuário não está vinculado a um tenant.' });
+        }
+        // Valida a senha
         const isPasswordValid = await bcrypt.compare(password, user.password);
         if (!isPasswordValid) {
-            console.log(`Senha incorreta para o usuário: ${email}`);
-            return res.status(401).json({ message: 'Credenciais inválidas' });
+            return res.status(401).json({ message: 'Senha incorreta.' });
         }
-
-        // Log de sucesso na autenticação
-        console.log(`Login bem-sucedido para o usuário: ${email}`);
-
-        // Retornar resposta com informações do usuário
-        res.status(200).json({
-            message: 'Login realizado com sucesso',
-            user: {
-                id: user.id,
-                email: user.email,
-                name: user.name
-            }
+        // Gera o token JWT incluindo o tenantId e o nome do usuário
+        const token = jwt.sign(
+            { userId: user.id, name: user.name, email: user.email, role: user.role, tenantId },
+            process.env.JWT_SECRET || 'secretkey',
+            { expiresIn: '1h' }
+        );
+        res.json({
+            message: 'Login bem-sucedido',
+            user: { id: user.id, name: user.name, email: user.email, role: user.role, tenantId },
+            token
         });
-    } catch (err) {
-        console.error('Erro ao realizar login:', err);
-        res.status(500).json({ message: 'Erro interno no servidor. Tente novamente mais tarde.' });
+    } catch (error) {
+        console.error('Erro ao realizar login:', error);
+        res.status(500).json({ message: 'Erro interno do servidor', error: error.message });
     }
 };

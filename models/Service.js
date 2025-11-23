@@ -18,10 +18,19 @@ const Service = sequelize.define('Service', {
         type: DataTypes.FLOAT, // Utilizando FLOAT para valores monetários
         allowNull: false,
     },
+    tenantId: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        references: {
+            model: 'tenants',
+            key: 'id',
+        },
+    },
 }, {
     // Opções adicionais, se necessário
-    tableName: 'Services', // Nome da tabela no banco de dados
+    tableName: 'service', // Nome da tabela no banco de dados (corrigido para minúsculo e singular)
     timestamps: true, // Adiciona colunas createdAt e updatedAt
+    freezeTableName: true, // Garante que o nome da tabela será exatamente 'service'
 });
 
 // Exporta o modelo
