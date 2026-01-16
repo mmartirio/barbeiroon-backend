@@ -22,9 +22,14 @@ User.init({
         type: DataTypes.STRING(100),
         allowNull: false,
     },
-    role: {
-        type: DataTypes.ENUM('cliente', 'barbeiro', 'admin'),
-        defaultValue: 'cliente',
+    groupId: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        references: {
+            model: 'groups',
+            key: 'id',
+        },
+        field: 'group_id',
     },
     tenantId: {
         type: DataTypes.INTEGER,
@@ -33,12 +38,18 @@ User.init({
             model: 'tenants',
             key: 'id',
         },
+        field: 'tenant_id',
+    },
+    isActive: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: true,
+        field: 'is_active',
     },
 }, {
     sequelize,
     modelName: 'User',
-    tableName: 'user', // Nome da tabela no banco de dados (já está correto)
-    timestamps: false, // Se quiser timestamps automáticos, mantenha 'true'; se não quiser, defina como 'false'
+    tableName: 'user',
+    timestamps: true,
 });
 
 module.exports = User;

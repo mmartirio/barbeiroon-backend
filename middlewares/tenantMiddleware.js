@@ -20,7 +20,13 @@ async function tenantMiddleware(req, res, next) {
             return res.status(404).json({ message: 'Tenant não encontrado.' });
         }
         req.tenant = tenant;
-        req.user = { id: decoded.userId, email: decoded.email, role: decoded.role, tenantId: decoded.tenantId };
+        req.user = { 
+            id: decoded.userId, 
+            email: decoded.email, 
+            groupId: decoded.groupId,
+            tenantId: decoded.tenantId,
+            permissions: decoded.permissions || {}
+        };
         next();
     } catch (err) {
         return res.status(401).json({ message: 'Token inválido ou expirado.' });

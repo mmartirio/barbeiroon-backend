@@ -68,6 +68,135 @@ exports.getConfig = async (req, res) => {
     }
 };
 const TenantService = require('../services/tenantService');
+const TenantOnboardingService = require('../services/tenantOnboardingService');
+
+/**
+ * Endpoint público para registro completo de barbearia
+ * Cria tenant + grupos + usuário admin em uma operação
+ */
+exports.register = async (req, res) => {
+    try {
+        const result = await TenantOnboardingService.onboardTenant(req.body);
+        
+        res.status(201).json({
+            message: 'Barbearia cadastrada com sucesso!',
+            ...result
+        });
+    } catch (error) {
+        console.error('Erro ao registrar barbearia:', error);
+        res.status(400).json({ 
+            message: error.message || 'Não foi possível completar o cadastro da barbearia. Por favor, verifique os dados e tente novamente' 
+        });
+    }
+};
+
+/**
+ * Buscar barbearia por slug (público)
+ */
+exports.getBySlug = async (req, res) => {
+    try {
+        const { slug } = req.params;
+        const tenant = await TenantOnboardingService.getTenantBySlug(slug);
+        
+        if (!tenant) {
+            return res.status(404).json({ message: 'Barbearia não encontrada. Verifique se o link está correto' });
+        }
+
+        res.status(200).json(tenant);
+    } catch (error) {
+        console.error('Erro ao buscar barbearia:', error);
+        res.status(500).json({ message: 'Não foi possível carregar os dados da barbearia. Tente novamente em alguns instantes' });
+    }
+};
+
+/**
+ * Atualizar dados da barbearia (requer autenticação e permissão)
+ */
+exports.updateTenant = async (req, res) => {
+    try {
+        const tenantId = req.tenant.id;
+        const userId = req.user.id;
+
+        const tenant = await TenantOnboardingService.updateTenant(tenantId, req.body, userId);
+
+        res.status(200).json({
+            message: 'Dados da barbearia atualizados com sucesso',
+            tenant
+        });
+    } catch (error) {
+        console.error('Erro ao atualizar barbearia:', error);
+        res.status(400).json({ 
+            message: error.message || 'Não foi possível atualizar os dados da barbearia. Verifique as informações e tente novamente' 
+        });
+    }
+};
+
+/**
+ * Buscar configurações da barbearia (requer autenticação)
+ */
+exports.getSettings = async (req, res) => {
+    try {
+        const tenantId = req.tenant.id;
+        const Tenant = require('../models/Tenant');
+        
+        const tenant = await Tenant.findByPk(tenantId, {
+            attributes: ['id', 'name', 'slug', 'email', 'phone', 'logo', 'backgroundImage']
+        });
+
+        if (!tenant) {
+            return res.status(404).json({ message: 'Não foi possível encontrar sua barbearia. Por favor, faça login novamente' });
+        }
+
+        res.status(200).json(tenant);
+    } catch (error) {
+        console.error('Erro ao buscar configurações:', error);
+        res.status(500).json({ message: 'Não foi possível carregar as configurações. Tente novamente' });
+    }
+};
+
+/**
+ * Upload de logo e background da barbearia
+ */
+exports.uploadAssets = async (req, res) => {
+    try {
+        const tenantId = req.tenant.id;
+        const Tenant = require('../models/Tenant');
+        
+        const tenant = await Tenant.findByPk(tenantId);
+        if (!tenant) {
+            return res.status(404).json({ message: 'Não foi possível encontrar sua barbearia' });
+        }
+
+        const updateData = {};
+
+        // Se logo foi enviada
+        if (req.files && req.files.logo && req.files.logo[0]) {
+            const logoPath = `/uploads/${req.files.logo[0].filename}`;
+            updateData.logo = logoPath;
+        }
+
+        // Se background foi enviado
+        if (req.files && req.files.background && req.files.background[0]) {
+            const backgroundPath = `/uploads/${req.files.background[0].filename}`;
+            updateData.backgroundImage = backgroundPath;
+        }
+
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({ message: 'Por favor, selecione pelo menos um arquivo (logo ou plano de fundo) para enviar' });
+        }
+
+        await tenant.update(updateData);
+
+        res.status(200).json({
+            message: 'Arquivos enviados com sucesso!',
+            logo: tenant.logo,
+            backgroundImage: tenant.backgroundImage
+        });
+    } catch (error) {
+        console.error('Erro ao fazer upload:', error);
+        res.status(500).json({ message: 'Não foi possível fazer o upload dos arquivos. Verifique o tamanho e formato das imagens' });
+    }
+};
 
 exports.getAll = async (req, res) => {
     try {
