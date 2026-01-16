@@ -9,7 +9,7 @@ exports.getAll = async (req, res) => {
         res.status(200).json(result);
     } catch (error) {
         console.error('Erro ao carregar agendamentos:', error);
-        res.status(500).json({ message: 'Erro ao carregar agendamentos' });
+        res.status(500).json({ message: '😞 Não foi possível carregar a lista de agendamentos. Tente novamente em alguns instantes.' });
     }
 };
 
@@ -20,7 +20,7 @@ exports.create = async (req, res) => {
         res.status(201).json(appointment);
     } catch (error) {
         console.error('Erro ao criar agendamento:', error);
-        res.status(500).json({ message: 'Erro ao criar agendamento' });
+        res.status(500).json({ message: '😞 Não foi possível criar o agendamento. Verifique se todos os dados foram preenchidos corretamente.' });
     }
 };
 
@@ -30,12 +30,12 @@ exports.delete = async (req, res) => {
         const tenantId = req.tenant.id;
         const deleted = await AppointmentService.delete(id, tenantId);
         if (!deleted) {
-            return res.status(404).json({ message: 'Agendamento não encontrado' });
+            return res.status(404).json({ message: '🔍 Agendamento não encontrado. Ele pode já ter sido removido.' });
         }
         res.status(200).json({ message: 'Agendamento removido com sucesso' });
     } catch (error) {
         console.error('Erro ao remover agendamento:', error);
-        res.status(500).json({ message: 'Erro ao remover agendamento' });
+        res.status(500).json({ message: '😞 Não foi possível remover o agendamento. Tente novamente.' });
     }
 };
 
@@ -45,11 +45,11 @@ exports.update = async (req, res) => {
         const tenantId = req.tenant.id;
         const updated = await AppointmentService.update(id, req.body, tenantId);
         if (!updated) {
-            return res.status(404).json({ message: 'Agendamento não encontrado' });
+            return res.status(404).json({ message: '🔍 Agendamento não encontrado para edição.' });
         }
         res.status(200).json(updated);
     } catch (error) {
         console.error('Erro ao editar agendamento:', error);
-        res.status(500).json({ message: 'Erro ao editar agendamento' });
+        res.status(500).json({ message: '😞 Não foi possível editar o agendamento. Verifique os dados e tente novamente.' });
     }
 };
