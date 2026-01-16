@@ -9,7 +9,7 @@ exports.getAll = async (req, res) => {
         res.status(200).json(result);
     } catch (error) {
         console.error('Erro ao carregar serviços:', error);
-        res.status(500).json({ message: 'Erro ao carregar serviços' });
+        res.status(500).json({ message: '😞 Não foi possível carregar a lista de serviços. Tente novamente em alguns instantes.' });
     }
 };
 
@@ -20,7 +20,7 @@ exports.create = async (req, res) => {
         res.status(201).json(service);
     } catch (error) {
         console.error('Erro ao criar serviço:', error);
-        res.status(500).json({ message: 'Erro ao criar serviço' });
+        res.status(500).json({ message: '😞 Não foi possível criar o serviço. Verifique se todos os dados foram preenchidos corretamente.' });
     }
 };
 
@@ -30,12 +30,12 @@ exports.delete = async (req, res) => {
         const tenantId = req.tenant.id;
         const deleted = await ServiceService.delete(id, tenantId);
         if (!deleted) {
-            return res.status(404).json({ message: 'Serviço não encontrado' });
+            return res.status(404).json({ message: '🔍 Serviço não encontrado. Ele pode já ter sido removido.' });
         }
         res.status(200).json({ message: 'Serviço removido com sucesso' });
     } catch (error) {
         console.error('Erro ao remover serviço:', error);
-        res.status(500).json({ message: 'Erro ao remover serviço' });
+        res.status(500).json({ message: '😞 Não foi possível remover o serviço. Tente novamente.' });
     }
 };
 
@@ -45,11 +45,11 @@ exports.update = async (req, res) => {
         const tenantId = req.tenant.id;
         const updated = await ServiceService.update(id, req.body, tenantId);
         if (!updated) {
-            return res.status(404).json({ message: 'Serviço não encontrado' });
+            return res.status(404).json({ message: '🔍 Serviço não encontrado para edição.' });
         }
         res.status(200).json(updated);
     } catch (error) {
         console.error('Erro ao editar serviço:', error);
-        res.status(500).json({ message: 'Erro ao editar serviço' });
+        res.status(500).json({ message: '😞 Não foi possível editar o serviço. Verifique os dados e tente novamente.' });
     }
 };
