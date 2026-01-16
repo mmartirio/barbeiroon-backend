@@ -8,8 +8,15 @@ const imagesRoutes = require('./routes/images');
 
 const seedDefault = require('./seedDefault');
 
+// Importar models e associações
+require('./models/associations');
+
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
+const groupRoutes = require('./routes/groupRoutes');
+const customerRoutes = require('./routes/customerRoutes');
+const publicCustomerRoutes = require('./routes/publicCustomerRoutes');
+const publicAppointmentRoutes = require('./routes/publicAppointmentRoutes');
 // const agendaRoutes = require('./routes/agendaRoutes');
 const serviceRoutes = require('./routes/serviceRoutes');
 const professionalRoutes = require('./routes/professionalRoutes');
@@ -17,6 +24,8 @@ const appointmentRoutes = require('./routes/appointmentRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const tenantRoutes = require('./routes/tenantRoutes');
 const User = require('./models/User'); // Importa o modelo de usuário
+const Group = require('./models/Group'); // Importa o modelo de grupo
+const Customer = require('./models/Customer'); // Importa o modelo de cliente
 const tenantMiddleware = require('./middlewares/tenantMiddleware');
 const cacheMiddleware = require('./utils/cacheMiddleware');
 
@@ -52,9 +61,16 @@ app.use((err, req, res, next) => {
 
 // Usar as rotas de autenticação e registro de usuários
 app.use('/api/auth', authRoutes);
+
+// Rotas públicas para portal do cliente (sem autenticação)
+app.use('/api/public/customer', publicCustomerRoutes);
+app.use('/api/public/appointment', publicAppointmentRoutes);
+
 // Cache apenas para GET de usuários
 app.use('/api/user/users', tenantMiddleware, cacheMiddleware((req) => `tenant_${req.tenant.id}_users_page_${req.query.page || 1}_limit_${req.query.limit || 10}`));
 app.use('/api/user', tenantMiddleware, userRoutes); // Rota principal para o CRUD de usuários
+app.use('/api/group', tenantMiddleware, groupRoutes); // Rotas de grupos multi-tenant
+app.use('/api/customer', tenantMiddleware, customerRoutes); // Rotas de clientes multi-tenant
 // app.use('/api/agenda', tenantMiddleware, agendaRoutes); // Rotas de agenda multi-tenant
 app.use('/api/service', tenantMiddleware, serviceRoutes); // Rotas de serviços multi-tenant
 app.use('/api/professional', tenantMiddleware, professionalRoutes); // Rotas de profissionais multi-tenant
