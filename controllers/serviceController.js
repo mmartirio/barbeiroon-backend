@@ -1,5 +1,17 @@
 const ServiceService = require('../services/serviceService');
 
+// Endpoint público para listar serviços (sem autenticação)
+exports.getAllPublic = async (req, res) => {
+    try {
+        const { tenantId } = req.params;
+        const result = await ServiceService.getAll({ tenantId, page: 1, limit: 100 });
+        res.status(200).json(result);
+    } catch (error) {
+        console.error('Erro ao carregar serviços:', error);
+        res.status(500).json({ message: 'Não foi possível carregar os serviços.' });
+    }
+};
+
 exports.getAll = async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
@@ -52,4 +64,16 @@ exports.update = async (req, res) => {
         console.error('Erro ao editar serviço:', error);
         res.status(500).json({ message: '😞 Não foi possível editar o serviço. Verifique os dados e tente novamente.' });
     }
+};
+
+exports.getMonthlyRevenue = async (req, res) => {
+  try {
+    const tenantId = req.tenant.id;
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+    const months = await ServiceService.getMonthlyRevenue(tenantId, year);
+    res.status(200).json({ months });
+  } catch (error) {
+    console.error('Erro ao carregar faturamento mensal:', error);
+    res.status(500).json({ message: 'Erro ao carregar faturamento mensal' });
+  }
 };

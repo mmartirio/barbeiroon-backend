@@ -1,5 +1,17 @@
 const ProfessionalService = require('../services/professionalService');
 
+// Endpoint público para listar profissionais (sem autenticação)
+exports.getAllPublic = async (req, res) => {
+    try {
+        const { tenantId } = req.params;
+        const result = await ProfessionalService.getAll({ tenantId, page: 1, limit: 100 });
+        res.status(200).json(result);
+    } catch (error) {
+        console.error('Erro ao carregar profissionais:', error);
+        res.status(500).json({ message: 'Não foi possível carregar os profissionais.' });
+    }
+};
+
 exports.getAll = async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;

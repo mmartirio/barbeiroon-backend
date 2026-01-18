@@ -2,10 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const sequelize = require('./config/db');
-
-(async () => {
 const imagesRoutes = require('./routes/images');
-
 const seedDefault = require('./seedDefault');
 
 // Importar models e associações
@@ -30,34 +27,30 @@ const tenantMiddleware = require('./middlewares/tenantMiddleware');
 const cacheMiddleware = require('./utils/cacheMiddleware');
 
 const app = express();
-
-// Servir arquivos estáticos da pasta uploads
-app.use('/uploads', express.static(require('path').join(__dirname, 'uploads')));
-// Rota para servir imagens do banco de dados
-app.use('/api/images', imagesRoutes);
 const PORT = process.env.PORT || 3001;
 
-// Rotas públicas para cadastro e gestão de barbearias (tenants)
-app.use('/api/tenant', tenantRoutes);
-
-
+// CORS deve vir ANTES de qualquer rota
 app.use(cors({
-    origin: 'http://localhost:3000',
+    origin: ['http://localhost:3000', 'http://localhost', 'http://localhost:80'],
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type']
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-Slug', 'Cache-Control']
 }));
 
 // Permite preflight para todas as rotas
 app.options('*', cors());
 
+// Middleware para processar JSON deve vir antes das rotas
 app.use(express.json());
 
-// Middleware para capturar erros internos do servidor
-app.use((err, req, res, next) => {
-    console.error(err.stack);
-    res.status(500).json({ message: 'Erro interno do servidor', error: err.message });
-});
+// Servir arquivos estáticos da pasta uploads
+app.use('/uploads', express.static(require('path').join(__dirname, 'uploads')));
+
+// Rota para servir imagens do banco de dados
+app.use('/api/images', imagesRoutes);
+
+// Rotas públicas para cadastro e gestão de barbearias (tenants)
+app.use('/api/tenant', tenantRoutes);
 
 // Usar as rotas de autenticação e registro de usuários
 app.use('/api/auth', authRoutes);
@@ -97,6 +90,12 @@ app.delete('/api/user/:id', async (req, res) => {
     }
 });
 
+// Middleware para capturar erros internos do servidor (deve vir no final)
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).json({ message: 'Erro interno do servidor', error: err.message });
+});
+
 // Conectar ao MySQL usando Sequelize
 const connectDatabase = async () => {
     try {
@@ -121,9 +120,7 @@ async function syncDatabase() {
 }
 
 // Iniciar o servidor
-
-
-
+(async () => {
     try {
         await sequelize.authenticate();
         console.log('Conexão com o banco de dados bem-sucedida!');
@@ -137,6 +134,3 @@ async function syncDatabase() {
         process.exit(1);
     }
 })();
-
-
-
