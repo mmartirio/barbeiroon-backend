@@ -1,9 +1,13 @@
+
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const sequelize = require('./config/db');
 const imagesRoutes = require('./routes/images');
 const seedDefault = require('./seedDefault');
+// const app = express();
+// Rota pública para listar usuários do tenant (para o portal do cliente)
+
 
 // Importar models e associações
 require('./models/associations');
@@ -16,9 +20,11 @@ const publicCustomerRoutes = require('./routes/publicCustomerRoutes');
 const publicAppointmentRoutes = require('./routes/publicAppointmentRoutes');
 // const agendaRoutes = require('./routes/agendaRoutes');
 const serviceRoutes = require('./routes/serviceRoutes');
+const publicServiceRoutes = require('./routes/publicServiceRoutes');
 const professionalRoutes = require('./routes/professionalRoutes');
 const appointmentRoutes = require('./routes/appointmentRoutes');
 const reportRoutes = require('./routes/reportRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
 const tenantRoutes = require('./routes/tenantRoutes');
 const User = require('./models/User'); // Importa o modelo de usuário
 const Group = require('./models/Group'); // Importa o modelo de grupo
@@ -27,6 +33,8 @@ const tenantMiddleware = require('./middlewares/tenantMiddleware');
 const cacheMiddleware = require('./utils/cacheMiddleware');
 
 const app = express();
+// Rota pública para listar usuários do tenant (para o portal do cliente)
+app.use('/api/public/users', require('./routes/userRoutes'));
 const PORT = process.env.PORT || 3001;
 
 // CORS deve vir ANTES de qualquer rota
@@ -55,9 +63,14 @@ app.use('/api/tenant', tenantRoutes);
 // Usar as rotas de autenticação e registro de usuários
 app.use('/api/auth', authRoutes);
 
+
 // Rotas públicas para portal do cliente (sem autenticação)
 app.use('/api/public/customer', publicCustomerRoutes);
 app.use('/api/public/appointment', publicAppointmentRoutes);
+app.use('/api/public/service', publicServiceRoutes);
+
+// Rotas de dashboard (admin)
+app.use('/api/dashboard', dashboardRoutes);
 
 // Cache apenas para GET de usuários
 app.use('/api/user/users', tenantMiddleware, cacheMiddleware((req) => `tenant_${req.tenant.id}_users_page_${req.query.page || 1}_limit_${req.query.limit || 10}`));

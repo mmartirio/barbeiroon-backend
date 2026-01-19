@@ -1,7 +1,11 @@
+
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
 const { checkPermission } = require('../middlewares/checkPermission');
+
+// Rota pública para listar usuários do tenant (para o portal do cliente)
+router.get('/public/users/:tenantId', userController.getAllUsersPublic);
 
 // Rota para obter todos os usuários
 router.get('/users', checkPermission('canViewUsers'), userController.getAllUsers);

@@ -12,7 +12,7 @@ const Service = sequelize.define('Service', {
     },
     cliente: {
         type: DataTypes.STRING,
-        allowNull: false,
+        allowNull: true, // Agora pode ser nulo para cadastro de serviços sem cliente
     },
     valor: {
         type: DataTypes.FLOAT, // Utilizando FLOAT para valores monetários

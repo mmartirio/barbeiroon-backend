@@ -28,11 +28,14 @@ exports.getAll = async (req, res) => {
 exports.create = async (req, res) => {
     try {
         const tenantId = req.tenant.id;
+        console.log('DEBUG - Criando serviço');
+        console.log('tenantId:', tenantId);
+        console.log('req.body:', req.body);
         const service = await ServiceService.create(req.body, tenantId);
         res.status(201).json(service);
     } catch (error) {
         console.error('Erro ao criar serviço:', error);
-        res.status(500).json({ message: '😞 Não foi possível criar o serviço. Verifique se todos os dados foram preenchidos corretamente.' });
+        res.status(500).json({ message: '😞 Não foi possível criar o serviço. Verifique se todos os dados foram preenchidos corretamente.', error: error.message });
     }
 };
 

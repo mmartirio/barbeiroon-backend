@@ -1,3 +1,17 @@
+// Rota pública: listar usuários ativos do tenant (apenas id e nome)
+exports.getAllUsersPublic = async (req, res) => {
+    try {
+        const tenantId = req.params.tenantId;
+        const users = await require('../models/User').findAll({
+            where: { tenantId, isActive: true },
+            attributes: ['id', 'name']
+        });
+        res.status(200).json({ users });
+    } catch (error) {
+        console.error('Erro ao carregar usuários públicos:', error);
+        res.status(500).json({ message: 'Não foi possível carregar os usuários.' });
+    }
+};
 const UserService = require('../services/userService');
 
 // Função para obter todos os usuários
