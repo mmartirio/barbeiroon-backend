@@ -45,6 +45,11 @@ User.init({
         defaultValue: true,
         field: 'is_active',
     },
+    isBarber: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+        field: 'is_barber',
+    },
 }, {
     sequelize,
     modelName: 'User',
