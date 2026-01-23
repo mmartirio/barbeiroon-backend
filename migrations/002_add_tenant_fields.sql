@@ -1,4 +1,6 @@
 -- Migration para adicionar novos campos ao tenant (barbearia)
+-- ATENÇÃO: Crie e altere índices/UNIQUE apenas via migrations!
+-- Nunca use sequelize.sync({ alter }) em produção, pois pode gerar índices duplicados.
 -- Adiciona campos de CNPJ, endereço completo, dados do proprietário, etc.
 
 -- ====================================

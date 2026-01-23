@@ -123,13 +123,9 @@ const connectDatabase = async () => {
 
 // Sincronizar o banco de dados
 async function syncDatabase() {
-    try {
-        // Cria as tabelas que não existem e atualiza as existentes conforme os models, sem apagar dados
-        await sequelize.sync({ alter: true });
-        console.log("Sincronização de models concluída!");
-    } catch (error) {
-        console.error("Erro ao sincronizar o banco de dados:", error);
-    }
+    // A sincronização automática está desabilitada para evitar problemas de duplicidade de índices e alterações não controladas.
+    // Use apenas migrations para alterar o schema do banco de dados.
+    // Caso precise criar o banco do zero, rode as migrations manualmente.
 }
 
 // Iniciar o servidor
@@ -139,7 +135,7 @@ async function syncDatabase() {
         console.log('Conexão com o banco de dados bem-sucedida!');
         await syncDatabase();
         await seedDefault();
-        app.listen(PORT, () => {
+        app.listen(PORT, '0.0.0.0', () => {
             console.log(`Servidor rodando na porta ${PORT}`);
         });
     } catch (err) {

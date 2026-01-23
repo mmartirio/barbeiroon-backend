@@ -3,6 +3,10 @@ const sequelize = require('../config/db');
 
 class Tenant extends Model {}
 
+// ATENÇÃO: Não utilize sequelize.sync({ alter }) em produção!
+// Isso pode criar índices duplicados e corromper o schema.
+// Mantenha UNIQUE e índices apenas via migrations controladas.
+
 Tenant.init({
     id: {
         type: DataTypes.INTEGER,
