@@ -1,0 +1,9 @@
+-- Cria tabela de encerramentos antecipados para agenda
+CREATE TABLE IF NOT EXISTS `EncerramentoAntecipados` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `dia` DATE NOT NULL,
+  `hora` TIME NOT NULL,
+  `motivo` VARCHAR(255) NOT NULL,
+  `createdAt` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);

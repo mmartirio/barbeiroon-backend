@@ -1,0 +1,10 @@
+-- Cria tabela de indisponibilidades para agenda
+CREATE TABLE IF NOT EXISTS `Indisponibilidades` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `dia` DATE NOT NULL,
+  `inicio` TIME NOT NULL,
+  `fim` TIME NOT NULL,
+  `motivo` VARCHAR(255) NOT NULL,
+  `createdAt` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updatedAt` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
