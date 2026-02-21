@@ -18,7 +18,7 @@ const groupRoutes = require('./routes/groupRoutes');
 const customerRoutes = require('./routes/customerRoutes');
 const publicCustomerRoutes = require('./routes/publicCustomerRoutes');
 const publicAppointmentRoutes = require('./routes/publicAppointmentRoutes');
-// const agendaRoutes = require('./routes/agendaRoutes');
+const agendaRoutes = require('./routes/agendaRoutes');
 const serviceRoutes = require('./routes/serviceRoutes');
 const publicServiceRoutes = require('./routes/publicServiceRoutes');
 const professionalRoutes = require('./routes/professionalRoutes');
@@ -77,7 +77,7 @@ app.use('/api/user/users', tenantMiddleware, cacheMiddleware((req) => `tenant_${
 app.use('/api/user', tenantMiddleware, userRoutes); // Rota principal para o CRUD de usuários
 app.use('/api/group', tenantMiddleware, groupRoutes); // Rotas de grupos multi-tenant
 app.use('/api/customer', tenantMiddleware, customerRoutes); // Rotas de clientes multi-tenant
-// app.use('/api/agenda', tenantMiddleware, agendaRoutes); // Rotas de agenda multi-tenant
+app.use('/api/agenda', tenantMiddleware, agendaRoutes); // Rotas de agenda multi-tenant
 app.use('/api/service', tenantMiddleware, serviceRoutes); // Rotas de serviços multi-tenant
 app.use('/api/professional', tenantMiddleware, professionalRoutes); // Rotas de profissionais multi-tenant
 app.use('/api/appointment', tenantMiddleware, appointmentRoutes); // Rotas de agendamentos multi-tenant

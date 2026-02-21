@@ -1,3 +1,14 @@
+// Função auxiliar para criar ou obter grupo
+async function getOrCreateGroup(where, defaults) {
+    let group = await Group.findOne({ where });
+    if (!group) {
+        group = await Group.create({ ...where, ...defaults });
+        console.log(`✓ Grupo ${where.name} criado`);
+    } else {
+        console.log(`✓ Grupo ${where.name} já existe`);
+    }
+    return group;
+}
 const sequelize = require('./config/db');
 const Group = require('./models/Group');
 const User = require('./models/User');
@@ -13,40 +24,39 @@ async function seedDefaultGroups(tenantId) {
         console.log(`Criando grupos padrão para o tenant ${tenantId}...`);
 
         // Grupo Administrador - Acesso total
-        const adminGroup = await Group.create({
-            name: 'Administrador',
-            description: 'Acesso total ao sistema, pode gerenciar usuários, grupos e todas as funcionalidades',
-            tenantId,
-            canCreateUser: true,
-            canEditUser: true,
-            canDeleteUser: true,
-            canViewUsers: true,
-            canManageGroups: true,
-            canViewCustomers: true,
-            canCreateCustomer: true,
-            canEditCustomer: true,
-            canDeleteCustomer: true,
-            canViewAppointments: true,
-            canCreateAppointment: true,
-            canEditAppointment: true,
-            canDeleteAppointment: true,
-            canViewServices: true,
-            canManageServices: true,
-            canViewProfessionals: true,
-            canManageProfessionals: true,
-            canViewAgenda: true,
-            canManageAgenda: true,
-            canViewReports: true,
-            canManageTenant: true,
-        });
+        const adminGroup = await getOrCreateGroup(
+            { name: 'Administrador', tenantId },
+            {
+                description: 'Acesso total ao sistema, pode gerenciar usuários, grupos e todas as funcionalidades',
+                canCreateUser: true,
+                canEditUser: true,
+                canDeleteUser: true,
+                canViewUsers: true,
+                canManageGroups: true,
+                canViewCustomers: true,
+                canCreateCustomer: true,
+                canEditCustomer: true,
+                canDeleteCustomer: true,
+                canViewAppointments: true,
+                canCreateAppointment: true,
+                canEditAppointment: true,
+                canDeleteAppointment: true,
+                canViewServices: true,
+                canManageServices: true,
+                canViewProfessionals: true,
+                canManageProfessionals: true,
+                canViewAgenda: true,
+                canManageAgenda: true,
+                canViewReports: true,
+                canManageTenant: true,
+            }
+        );
 
-        console.log('✓ Grupo Administrador criado');
-
-        // Grupo Barbeiro - Acesso a agenda, clientes e serviços
-        const barbeiroGroup = await Group.create({
-            name: 'Barbeiro',
-            description: 'Pode visualizar agenda, clientes, serviços e criar agendamentos',
-            tenantId,
+        // Grupo Padrão
+        // Grupo Padrão: idempotente, atualiza permissões se já existir
+        let padraoGroup = await Group.findOne({ where: { name: 'Padrão', tenantId } });
+        const padraoDefaults = {
+            description: 'Grupo padrão com permissões básicas',
             canCreateUser: false,
             canEditUser: false,
             canDeleteUser: false,
@@ -58,7 +68,7 @@ async function seedDefaultGroups(tenantId) {
             canDeleteCustomer: false,
             canViewAppointments: true,
             canCreateAppointment: true,
-            canEditAppointment: true,
+            canEditAppointment: false,
             canDeleteAppointment: false,
             canViewServices: true,
             canManageServices: false,
@@ -68,44 +78,18 @@ async function seedDefaultGroups(tenantId) {
             canManageAgenda: false,
             canViewReports: false,
             canManageTenant: false,
-        });
-
-        console.log('✓ Grupo Barbeiro criado');
-
-        // Grupo Atendente - Acesso a clientes e agendamentos
-        const atendenteGroup = await Group.create({
-            name: 'Atendente',
-            description: 'Pode gerenciar clientes e agendamentos, visualizar agenda e serviços',
-            tenantId,
-            canCreateUser: false,
-            canEditUser: false,
-            canDeleteUser: false,
-            canViewUsers: true,
-            canManageGroups: false,
-            canViewCustomers: true,
-            canCreateCustomer: true,
-            canEditCustomer: true,
-            canDeleteCustomer: true,
-            canViewAppointments: true,
-            canCreateAppointment: true,
-            canEditAppointment: true,
-            canDeleteAppointment: true,
-            canViewServices: true,
-            canManageServices: false,
-            canViewProfessionals: true,
-            canManageProfessionals: false,
-            canViewAgenda: true,
-            canManageAgenda: false,
-            canViewReports: false,
-            canManageTenant: false,
-        });
-
-        console.log('✓ Grupo Atendente criado');
+        };
+        if (!padraoGroup) {
+            padraoGroup = await Group.create({ name: 'Padrão', tenantId, ...padraoDefaults });
+            console.log('✓ Grupo Padrão criado');
+        } else {
+            await padraoGroup.update(padraoDefaults);
+            console.log('✓ Grupo Padrão já existe (atualizado)');
+        }
 
         return {
             adminGroup,
-            barbeiroGroup,
-            atendenteGroup
+            padraoGroup
         };
     } catch (error) {
         console.error('Erro ao criar grupos padrão:', error);
@@ -117,9 +101,14 @@ async function createAdminUser(tenantId, groupId, email, password, name) {
     try {
         console.log('Criando usuário administrador...');
 
+        // Verifica se já existe usuário admin com o mesmo email
+        let adminUser = await User.findOne({ where: { email } });
+        if (adminUser) {
+            console.log('✓ Usuário administrador já existe');
+            return adminUser;
+        }
         const hashedPassword = await bcrypt.hash(password, 10);
-        
-        const adminUser = await User.create({
+        adminUser = await User.create({
             name,
             email,
             password: hashedPassword,
@@ -127,11 +116,9 @@ async function createAdminUser(tenantId, groupId, email, password, name) {
             tenantId,
             isActive: true
         });
-
         console.log('✓ Usuário administrador criado com sucesso');
         console.log(`  Email: ${email}`);
         console.log(`  Nome: ${name}`);
-
         return adminUser;
     } catch (error) {
         console.error('Erro ao criar usuário administrador:', error);

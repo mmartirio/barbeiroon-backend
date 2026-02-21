@@ -1,3 +1,9 @@
+// Handler básico para salvar expediente (placeholder)
+exports.saveExpediente = async (req, res) => {
+	// Aqui você pode validar e salvar o expediente no banco futuramente
+	// Por enquanto, apenas retorna sucesso para o frontend
+	res.status(200).json({ message: 'Expediente salvo com sucesso!' });
+};
 const Indisponibilidade = require('../models/Indisponibilidade');
 const EncerramentoAntecipado = require('../models/EncerramentoAntecipado');
 

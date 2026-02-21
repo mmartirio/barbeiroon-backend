@@ -1,3 +1,99 @@
+const Tenant = require('../models/Tenant');
+const User = require('../models/User');
+const Group = require('../models/Group');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
+exports.registerAdmin = async (req, res) => {
+    try {
+        // Exige autenticação e permissão
+        if (!req.user || !req.user.permissions || !req.user.permissions.isAdmin) {
+            return res.status(403).json({ message: 'Permissão negada. Apenas administradores podem registrar novo admin.' });
+        }
+        const { tenantName, tenantSlug, adminName, adminEmail, adminPassword } = req.body;
+        if (!tenantName || !tenantSlug || !adminName || !adminEmail || !adminPassword) {
+            return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
+        }
+        // Verifica se o tenant já existe
+        const existingTenant = await Tenant.findOne({ where: { slug: tenantSlug } });
+        if (existingTenant) {
+            return res.status(409).json({ message: 'Já existe uma barbearia com esse slug.' });
+        }
+        // Cria o tenant
+        const tenant = await Tenant.create({ name: tenantName, slug: tenantSlug });
+        // Cria o grupo admin com todas permissões
+        const adminGroup = await Group.create({
+            name: 'Administrador',
+            tenantId: tenant.id,
+            canCreateUser: true,
+            canEditUser: true,
+            canDeleteUser: true,
+            canViewUsers: true,
+            canManageGroups: true,
+            canViewCustomers: true,
+            canCreateCustomer: true,
+            canEditCustomer: true,
+            canDeleteCustomer: true,
+            canViewAppointments: true,
+            canCreateAppointment: true,
+            canEditAppointment: true,
+            canDeleteAppointment: true,
+            canViewServices: true,
+            canManageServices: true,
+            canViewProfessionals: true,
+            canManageProfessionals: true,
+            canViewAgenda: true,
+            canManageAgenda: true,
+            canViewReports: true,
+            canManageTenant: true
+        });
+        // Cria o usuário admin
+        const hashedPassword = await bcrypt.hash(adminPassword, 10);
+        const adminUser = await User.create({
+            name: adminName,
+            email: adminEmail,
+            password: hashedPassword,
+            groupId: adminGroup.id,
+            tenantId: tenant.id,
+            isActive: true
+        });
+        // Gera token JWT
+        const token = jwt.sign({
+            userId: adminUser.id,
+            email: adminUser.email,
+            groupId: adminGroup.id,
+            tenantId: tenant.id,
+            permissions: {
+                canCreateUser: true,
+                canEditUser: true,
+                canDeleteUser: true,
+                canViewUsers: true,
+                canManageGroups: true,
+                canViewCustomers: true,
+                canCreateCustomer: true,
+                canEditCustomer: true,
+                canDeleteCustomer: true,
+                canViewAppointments: true,
+                canCreateAppointment: true,
+                canEditAppointment: true,
+                canDeleteAppointment: true,
+                canViewServices: true,
+                canManageServices: true,
+                canViewProfessionals: true,
+                canManageProfessionals: true,
+                canViewAgenda: true,
+                canManageAgenda: true,
+                canViewReports: true,
+                canManageTenant: true,
+                isAdmin: true
+            }
+        }, process.env.JWT_SECRET || 'secretkey', { expiresIn: '2h' });
+        res.status(201).json({ message: 'Admin registrado com sucesso!', token });
+    } catch (error) {
+        console.error('Erro ao registrar admin:', error);
+        res.status(500).json({ message: 'Erro ao registrar admin', error: error.message });
+    }
+};
 // Upload de imagem de fundo (arquivo) para o tenant
 exports.uploadBackgroundImage = async (req, res) => {
     try {
@@ -56,11 +152,11 @@ exports.getConfig = async (req, res) => {
         // Aqui você pode customizar o que é retornado como "config" do tenant
         res.status(200).json({
             id: tenant.id,
-            name: tenant.name,
-            slug: tenant.slug,
-            email: tenant.email,
-            logo: tenant.logo,
-            backgroundImage: tenant.backgroundImage
+            name: tenant.name || '',
+            slug: tenant.slug || '',
+            email: tenant.email || '',
+            logo: tenant.logo || '',
+            backgroundImage: tenant.backgroundImage || ''
         });
     } catch (error) {
         console.error('Erro ao buscar config do tenant:', error);

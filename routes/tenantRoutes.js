@@ -1,14 +1,17 @@
 const express = require('express');
 const router = express.Router();
 const tenantController = require('../controllers/tenantController');
-const tenantMiddleware = require('../middlewares/tenantMiddleware');
 const { checkPermission } = require('../middlewares/checkPermission');
 const upload = require('../middlewares/upload');
+const tenantMiddleware = require('../middlewares/tenantMiddleware');
 
 // ===== ROTAS PÚBLICAS (sem autenticação) =====
 
 // Registro completo de nova barbearia (onboarding)
 router.post('/register', tenantController.register);
+
+// Registro do primeiro admin de um tenant (protegida)
+router.post('/register-admin', tenantMiddleware, tenantController.registerAdmin);
 
 // Buscar barbearia por slug (para portal público)
 router.get('/slug/:slug', tenantController.getBySlug);

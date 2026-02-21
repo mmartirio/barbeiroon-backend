@@ -11,7 +11,7 @@ router.get('/public/users/:tenantId', userController.getAllUsersPublic);
 router.get('/users', checkPermission('canViewUsers'), userController.getAllUsers);
 
 // Rota para registrar um novo usuário
-router.post('/register', checkPermission('canCreateUser'), userController.register);
+router.post('/register', userController.register);
 
 // Rota para editar um usuário
 router.put('/:id', checkPermission('canEditUser'), userController.userEdit);

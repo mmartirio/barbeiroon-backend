@@ -8,5 +8,9 @@ router.post('/indisponibilidade', agendaController.saveIndisponibilidade);
 // Salvar encerramento antecipado
 router.post('/encerramento-antecipado', agendaController.saveEncerramentoAntecipado);
 
+
+// Salvar expediente (placeholder)
+router.post('/', require('../controllers/agendaController').saveExpediente);
+
 module.exports = router;
 

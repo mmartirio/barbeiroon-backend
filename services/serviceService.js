@@ -30,17 +30,16 @@ class ServiceService {
         const end = new Date(year + 1, 0, 1);
         const services = await Service.findAll({
             where: {
-                tenantId,
-                data: { [Op.gte]: start, [Op.lt]: end }
+                created_at: { [Op.gte]: start, [Op.lt]: end }
             },
-            attributes: ['data', 'valor'],
+            attributes: ['created_at', 'price'],
             raw: true
         });
         // Agrupa por mês
         const months = Array(12).fill(0);
         services.forEach(s => {
-            const month = new Date(s.data).getMonth();
-            months[month] += s.valor;
+            const month = new Date(s.created_at).getMonth();
+            months[month] += parseFloat(s.price || 0);
         });
         return months;
     }

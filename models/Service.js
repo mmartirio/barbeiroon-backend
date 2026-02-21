@@ -2,35 +2,39 @@ const { DataTypes } = require('sequelize');
 const sequelize = require('../config/db'); // Ajuste o caminho conforme necessário
 
 const Service = sequelize.define('Service', {
-    tipoServico: {
+    name: {
         type: DataTypes.STRING,
         allowNull: false,
     },
-    data: {
-        type: DataTypes.DATE,
-        defaultValue: DataTypes.NOW, // Define a data atual como padrão
-    },
-    cliente: {
-        type: DataTypes.STRING,
-        allowNull: true, // Agora pode ser nulo para cadastro de serviços sem cliente
-    },
-    valor: {
-        type: DataTypes.FLOAT, // Utilizando FLOAT para valores monetários
+    price: {
+        type: DataTypes.DECIMAL(10, 2),
         allowNull: false,
+    },
+    duration: {
+        type: DataTypes.TIME,
+        allowNull: false,
+    },
+    description: {
+        type: DataTypes.TEXT,
+        allowNull: true,
     },
     tenantId: {
         type: DataTypes.INTEGER,
         allowNull: false,
-        references: {
-            model: 'tenants',
-            key: 'id',
-        },
+        field: 'tenant_id',
+    },
+    cliente: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
+    created_at: {
+        type: DataTypes.DATE,
+        defaultValue: DataTypes.NOW,
     },
 }, {
-    // Opções adicionais, se necessário
-    tableName: 'service', // Nome da tabela no banco de dados (corrigido para minúsculo e singular)
-    timestamps: true, // Adiciona colunas createdAt e updatedAt
-    freezeTableName: true, // Garante que o nome da tabela será exatamente 'service'
+    tableName: 'service',
+    timestamps: false,
+    freezeTableName: true,
 });
 
 // Exporta o modelo

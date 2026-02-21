@@ -1,0 +1,9 @@
+{
+  "development": {
+    "username": "barbeiro_user",
+    "password": "barbeiro_pass",
+    "database": "meu_barbeiro",
+    "host": "mysql",
+    "dialect": "mysql"
+  }
+}
