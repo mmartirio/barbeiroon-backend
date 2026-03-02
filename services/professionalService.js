@@ -2,13 +2,21 @@ const Professional = require('../models/Professional');
 
 class ProfessionalService {
     static async getAll({ tenantId, page = 1, limit = 10 }) {
-        const offset = (page - 1) * limit;
-        const { rows, count } = await Professional.findAndCountAll({
-            where: { tenantId },
-            offset,
-            limit
-        });
-        return { professionals: rows, total: count, page, limit };
+        try {
+            const offset = (page - 1) * limit;
+            const { rows, count } = await Professional.findAndCountAll({
+                where: { tenantId },
+                offset,
+                limit
+            });
+            return { professionals: rows, total: count, page, limit };
+        } catch (error) {
+            if (error && error.original && error.original.code === 'ER_NO_SUCH_TABLE') {
+                // Banco legado pode nao ter a tabela professional
+                return { professionals: [], total: 0, page, limit };
+            }
+            throw error;
+        }
     }
 
     static async create(data, tenantId) {

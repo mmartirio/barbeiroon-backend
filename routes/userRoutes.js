@@ -7,6 +7,9 @@ const { checkPermission } = require('../middlewares/checkPermission');
 // Rota pública para listar usuários do tenant (para o portal do cliente)
 router.get('/public/users/:tenantId', userController.getAllUsersPublic);
 
+// Rota pública para listar barbeiros do tenant (para o portal do cliente)
+router.get('/barbers/:tenantId', userController.getAllBarbersPublic);
+
 // Rota para obter todos os usuários
 router.get('/users', checkPermission('canViewUsers'), userController.getAllUsers);
 

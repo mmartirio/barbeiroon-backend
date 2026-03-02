@@ -1,4 +1,5 @@
 const AppointmentService = require('../services/appointmentService');
+const User = require('../models/User');
 
 exports.getAll = async (req, res) => {
     try {
@@ -51,5 +52,124 @@ exports.update = async (req, res) => {
     } catch (error) {
         console.error('Erro ao editar agendamento:', error);
         res.status(500).json({ message: '😞 Não foi possível editar o agendamento. Verifique os dados e tente novamente.' });
+    }
+};
+
+const getTodayDateString = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const canAccessOwnAppointments = async (req) => {
+    if (req.user?.permissions?.canViewAppointments) {
+        return true;
+    }
+    const user = await User.findByPk(req.user?.id, { attributes: ['id', 'isBarber'] });
+    return !!user?.isBarber;
+};
+
+exports.getOwn = async (req, res) => {
+    try {
+        const allowed = await canAccessOwnAppointments(req);
+        if (!allowed) {
+            return res.status(403).json({ message: 'Voce nao tem permissao para ver seus agendamentos.' });
+        }
+
+        const tenantId = req.tenant.id;
+        const professionalId = req.user.id;
+        const date = req.query.date || getTodayDateString();
+        const appointments = await AppointmentService.getByProfessional(professionalId, tenantId, date);
+        res.status(200).json({ appointments, date });
+    } catch (error) {
+        console.error('Erro ao carregar agendamentos do barbeiro:', error);
+        res.status(500).json({ message: 'Nao foi possivel carregar os agendamentos.' });
+    }
+};
+
+exports.cancelOwn = async (req, res) => {
+    try {
+        const allowed = await canAccessOwnAppointments(req);
+        if (!allowed) {
+            return res.status(403).json({ message: 'Voce nao tem permissao para cancelar este agendamento.' });
+        }
+
+        const { id } = req.params;
+        const tenantId = req.tenant.id;
+        const professionalId = req.user.id;
+        const deleted = await AppointmentService.deleteByProfessional(id, professionalId, tenantId);
+        if (!deleted) {
+            return res.status(404).json({ message: 'Agendamento nao encontrado.' });
+        }
+        res.status(200).json({ message: 'Agendamento cancelado com sucesso' });
+    } catch (error) {
+        console.error('Erro ao cancelar agendamento do barbeiro:', error);
+        res.status(500).json({ message: 'Nao foi possivel cancelar o agendamento.' });
+    }
+};
+
+exports.closeOwn = async (req, res) => {
+    try {
+        const allowed = await canAccessOwnAppointments(req);
+        if (!allowed) {
+            return res.status(403).json({ message: 'Voce nao tem permissao para encerrar este agendamento.' });
+        }
+
+        const { id } = req.params;
+        const tenantId = req.tenant.id;
+        const professionalId = req.user.id;
+        const deleted = await AppointmentService.deleteByProfessional(id, professionalId, tenantId);
+        if (!deleted) {
+            return res.status(404).json({ message: 'Agendamento nao encontrado.' });
+        }
+        res.status(200).json({ message: 'Atendimento encerrado com sucesso' });
+    } catch (error) {
+        console.error('Erro ao encerrar agendamento do barbeiro:', error);
+        res.status(500).json({ message: 'Nao foi possivel encerrar o atendimento.' });
+    }
+};
+
+exports.getAllGroupedByDate = async (req, res) => {
+    try {
+        const tenantId = req.tenant.id;
+        const date = req.query.date || getTodayDateString();
+        const appointments = await AppointmentService.getAllGroupedByProfessional(tenantId, date);
+
+        const userIds = appointments
+            .filter(a => a && a.professionalId)
+            .map(a => a.professionalId);
+
+        const users = await User.findAll({
+            where: { id: userIds, tenantId },
+            attributes: ['id', 'name']
+        });
+
+        const userMap = new Map(users.map(u => [String(u.id), u.name]));
+
+        const grouped = appointments.reduce((acc, appointment) => {
+            const plain = typeof appointment.get === 'function' ? appointment.get({ plain: true }) : appointment;
+            const key = String(plain.professionalId || 'unknown');
+            const name = userMap.get(key) || `Profissional ${key}`;
+
+            if (!acc[key]) {
+                acc[key] = {
+                    professionalId: plain.professionalId,
+                    professionalName: name,
+                    appointments: []
+                };
+            }
+            acc[key].appointments.push(plain);
+            return acc;
+        }, {});
+
+        res.status(200).json({
+            date,
+            groups: Object.values(grouped)
+        });
+    } catch (error) {
+        console.error('Erro ao carregar agendamentos agrupados:', error);
+        res.status(500).json({ message: 'Nao foi possivel carregar os agendamentos.' });
     }
 };

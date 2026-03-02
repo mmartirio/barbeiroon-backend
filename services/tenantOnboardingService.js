@@ -98,7 +98,7 @@ class TenantOnboardingService {
             canManageTenant: true,
         }, { transaction });
 
-        groups.push(adminGroup);
+        groups.push(adminGroup.get({ plain: true }));
 
         // Grupo Barbeiro
         const barbeiroGroup = await Group.create({
@@ -116,7 +116,7 @@ class TenantOnboardingService {
             canViewAgenda: true,
         }, { transaction });
 
-        groups.push(barbeiroGroup);
+        groups.push(barbeiroGroup.get({ plain: true }));
 
         // Grupo Atendente
         const atendenteGroup = await Group.create({
@@ -137,7 +137,7 @@ class TenantOnboardingService {
             canViewAgenda: true,
         }, { transaction });
 
-        groups.push(atendenteGroup);
+        groups.push(atendenteGroup.get({ plain: true }));
 
         return groups;
     }
@@ -157,7 +157,7 @@ class TenantOnboardingService {
             isActive: true
         }, { transaction });
 
-        return adminUser;
+        return adminUser.get({ plain: true });
     }
 
     /**
@@ -265,17 +265,19 @@ class TenantOnboardingService {
                 // Não bloqueia o cadastro se o e-mail falhar
             }
 
+            const plainTenant = tenant.get ? tenant.get({ plain: true }) : tenant;
+
             return {
                 tenant: {
-                    id: tenant.id,
-                    name: tenant.name,
-                    companyName: tenant.companyName,
-                    slug: tenant.slug,
-                    email: tenant.email,
-                    phone: tenant.phone,
-                    address: tenant.address,
-                    city: tenant.city,
-                    state: tenant.state
+                    id: plainTenant.id,
+                    name: plainTenant.name,
+                    companyName: plainTenant.companyName,
+                    slug: plainTenant.slug,
+                    email: plainTenant.email,
+                    phone: plainTenant.phone,
+                    address: plainTenant.address,
+                    city: plainTenant.city,
+                    state: plainTenant.state
                 },
                 groups: groups.map(g => ({
                     id: g.id,
@@ -292,7 +294,7 @@ class TenantOnboardingService {
                     email: adminUser.email,
                     message: 'Use esta credencial para fazer login. Verifique seu e-mail para mais informações.'
                 },
-                accessUrl: `/barbearia/${tenant.slug}`,
+                accessUrl: `/barbearia/${plainTenant.slug}`,
                 emailSent: true // Indica que o e-mail foi enviado
             };
         } catch (error) {
@@ -338,7 +340,7 @@ class TenantOnboardingService {
 
         await tenant.update(updateData);
 
-        return tenant;
+        return tenant.get ? tenant.get({ plain: true }) : tenant;
     }
 
     /**
@@ -361,7 +363,7 @@ class TenantOnboardingService {
             page,
             limit,
             totalPages: Math.ceil(count / limit),
-            tenants: rows
+            tenants: rows.map(r => r.get ? r.get({ plain: true }) : r)
         };
     }
 
@@ -376,7 +378,7 @@ class TenantOnboardingService {
                         'backgroundImage']
         });
 
-        return tenant;
+        return tenant ? (tenant.get ? tenant.get({ plain: true }) : tenant) : null;
     }
 }
 

@@ -22,6 +22,7 @@ const agendaRoutes = require('./routes/agendaRoutes');
 const serviceRoutes = require('./routes/serviceRoutes');
 const publicServiceRoutes = require('./routes/publicServiceRoutes');
 const professionalRoutes = require('./routes/professionalRoutes');
+const publicProfessionalRoutes = require('./routes/publicProfessionalRoutes');
 const appointmentRoutes = require('./routes/appointmentRoutes');
 const reportRoutes = require('./routes/reportRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
@@ -33,6 +34,17 @@ const tenantMiddleware = require('./middlewares/tenantMiddleware');
 const cacheMiddleware = require('./utils/cacheMiddleware');
 
 const app = express();
+
+// Captura exceções não tratadas e rejeições para registrar stack traces (ajuda a diagnosticar crashes nativos)
+process.on('uncaughtException', (err) => {
+    console.error('UNCAUGHT_EXCEPTION', err && err.stack ? err.stack : err);
+    // Não tentar continuar em estado inconsistente — permitir que o processo finalize para que o supervisor (nodemon/docker) reinicie e preserve logs
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('UNHANDLED_REJECTION', reason && reason.stack ? reason.stack : reason, 'promise:', promise);
+});
 // Rota pública para listar usuários do tenant (para o portal do cliente)
 app.use('/api/public/users', require('./routes/userRoutes'));
 const PORT = process.env.PORT || 3001;
@@ -68,12 +80,12 @@ app.use('/api/auth', authRoutes);
 app.use('/api/public/customer', publicCustomerRoutes);
 app.use('/api/public/appointment', publicAppointmentRoutes);
 app.use('/api/public/service', publicServiceRoutes);
+app.use('/api/public/professional', publicProfessionalRoutes);
 
 // Rotas de dashboard (admin)
 app.use('/api/dashboard', dashboardRoutes);
 
-// Cache apenas para GET de usuários
-app.use('/api/user/users', tenantMiddleware, cacheMiddleware((req) => `tenant_${req.tenant.id}_users_page_${req.query.page || 1}_limit_${req.query.limit || 10}`));
+// Cache para listagem de usuários está temporariamente desativado — evita clonagem de objetos complexos
 app.use('/api/user', tenantMiddleware, userRoutes); // Rota principal para o CRUD de usuários
 app.use('/api/group', tenantMiddleware, groupRoutes); // Rotas de grupos multi-tenant
 app.use('/api/customer', tenantMiddleware, customerRoutes); // Rotas de clientes multi-tenant

@@ -1,5 +1,5 @@
 const User = require('./models/User'); // Ajuste o caminho conforme necessário
-const bcrypt = require('bcrypt');
+const bcrypt = require('bcryptjs');
 
 const updateAdminPassword = async (newPassword) => {
     try {

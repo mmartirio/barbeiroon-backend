@@ -123,26 +123,37 @@ exports.getOrCreateCustomer = async (req, res) => {
     try {
         const { phone, name, birthDate, tenantId } = req.body;
 
-        if (!phone || !name || !tenantId) {
-            return res.status(400).json({ message: 'Telefone, nome e tenantId são obrigatórios' });
+        if (!phone || !tenantId) {
+            return res.status(400).json({ message: 'Telefone e tenantId são obrigatórios' });
         }
 
         // Busca cliente existente
         let customer = await CustomerService.getCustomerByPhone(phone, tenantId);
-
-        // Se não existir, cria novo
-        if (!customer) {
-            customer = await CustomerService.createCustomer({
-                phone,
-                name,
-                birthDate,
-                tenantId
+        if (customer) {
+            return res.status(200).json({
+                message: 'Cliente já cadastrado',
+                customer
             });
         }
 
-        res.status(200).json({ 
-            message: customer.createdAt ? 'Cliente já cadastrado' : 'Cliente criado com sucesso',
-            customer 
+        if (!name) {
+            return res.status(200).json({
+                message: 'Nome é obrigatório para novo cadastro',
+                needsName: true
+            });
+        }
+
+        // Se não existir, cria novo
+        customer = await CustomerService.createCustomer({
+            phone,
+            name,
+            birthDate,
+            tenantId
+        });
+
+        res.status(200).json({
+            message: 'Cliente criado com sucesso',
+            customer
         });
     } catch (error) {
         console.error('Erro ao buscar/criar cliente:', error);

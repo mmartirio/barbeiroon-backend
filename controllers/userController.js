@@ -12,6 +12,21 @@ exports.getAllUsersPublic = async (req, res) => {
         res.status(500).json({ message: 'Não foi possível carregar os usuários.' });
     }
 };
+
+// Rota pública: listar barbeiros (usuários com isBarber=true) do tenant
+exports.getAllBarbersPublic = async (req, res) => {
+    try {
+        const tenantId = req.params.tenantId;
+        const users = await require('../models/User').findAll({
+            where: { tenantId, isActive: true, isBarber: true },
+            attributes: ['id', 'name']
+        });
+        res.status(200).json({ users });
+    } catch (error) {
+        console.error('Erro ao carregar barbeiros públicos:', error);
+        res.status(500).json({ message: 'Não foi possível carregar os barbeiros.' });
+    }
+};
 const UserService = require('../services/userService');
 
 // Função para obter todos os usuários
@@ -34,8 +49,15 @@ exports.register = async (req, res) => {
         const { name, email, password, groupId } = req.body;
         const tenantId = req.tenant.id;
 
+        console.log('➡️  userController.register called', { body: { name, email, groupId }, tenantId });
+
         if (!groupId) {
             return res.status(400).json({ message: '📝 Por favor, selecione um grupo de permissões para o usuário.' });
+        }
+
+        // Validação de senha: é obrigatória no cadastro via painel
+        if (!password || password.length < 6) {
+            return res.status(400).json({ message: '🔐 Por favor, informe uma senha com no mínimo 6 caracteres.' });
         }
 
         const existingUser = await UserService.findByEmail(email, tenantId);
@@ -48,7 +70,7 @@ exports.register = async (req, res) => {
             user: { id: newUser.id, name: newUser.name, email: newUser.email, groupId: newUser.groupId }
         });
     } catch (error) {
-        console.error('Erro ao registrar usuário:', error);
+        console.error('Erro ao registrar usuário:', error && error.stack ? error.stack : error);
         res.status(500).json({ message: '😞 Não foi possível cadastrar o usuário. Verifique se todos os dados estão corretos e tente novamente.' });
     }
 };
@@ -73,9 +95,16 @@ exports.deleteUser = async (req, res) => {
 exports.userEdit = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, email, groupId } = req.body;
+        const { name, email, groupId, isBarber } = req.body;
         const tenantId = req.tenant.id;
-        const updatedUser = await UserService.updateUser(id, { name, email, groupId, tenantId });
+
+        if (email) {
+            const existingUser = await UserService.findByEmail(email, tenantId);
+            if (existingUser && String(existingUser.id) !== String(id)) {
+                return res.status(400).json({ message: '✉️ Este e-mail já está sendo usado por outro usuário.' });
+            }
+        }
+        const updatedUser = await UserService.updateUser(id, { name, email, groupId, isBarber, tenantId });
         if (!updatedUser) {
             return res.status(404).json({ message: '🔍 Usuário não encontrado para edição.' });
         }

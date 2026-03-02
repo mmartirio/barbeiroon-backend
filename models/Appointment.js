@@ -29,13 +29,15 @@ const Appointment = sequelize.define('Appointment', {
         },
         field: 'professional_id',
     },
-    date: {
-        type: DataTypes.DATE,
+    appointmentDate: {
+        type: DataTypes.DATEONLY,
         allowNull: false,
+        field: 'appointment_date',
     },
-    status: {
-        type: DataTypes.STRING,
-        defaultValue: 'Scheduled',
+    appointmentTime: {
+        type: DataTypes.TIME,
+        allowNull: false,
+        field: 'appointment_time',
     },
     tenantId: {
         type: DataTypes.INTEGER,
