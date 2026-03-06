@@ -28,6 +28,9 @@ exports.getAll = async (req, res) => {
 exports.create = async (req, res) => {
     try {
         const tenantId = req.tenant.id;
+        if (req.body.duration === '' || req.body.duration === null || req.body.duration === undefined) {
+            return res.status(400).json({ message: 'Duracao e obrigatoria.' });
+        }
         console.log('DEBUG - Criando serviço');
         console.log('tenantId:', tenantId);
         console.log('req.body:', req.body);
@@ -35,7 +38,8 @@ exports.create = async (req, res) => {
         res.status(201).json(service);
     } catch (error) {
         console.error('Erro ao criar serviço:', error);
-        res.status(500).json({ message: '😞 Não foi possível criar o serviço. Verifique se todos os dados foram preenchidos corretamente.', error: error.message });
+        const status = error.message === 'Duracao obrigatoria' ? 400 : 500;
+        res.status(status).json({ message: '😞 Não foi possível criar o serviço. Verifique se todos os dados foram preenchidos corretamente.', error: error.message });
     }
 };
 
@@ -65,7 +69,8 @@ exports.update = async (req, res) => {
         res.status(200).json(updated);
     } catch (error) {
         console.error('Erro ao editar serviço:', error);
-        res.status(500).json({ message: '😞 Não foi possível editar o serviço. Verifique os dados e tente novamente.' });
+        const status = error.message === 'Duracao obrigatoria' ? 400 : 500;
+        res.status(status).json({ message: '😞 Não foi possível editar o serviço. Verifique os dados e tente novamente.' });
     }
 };
 

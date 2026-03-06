@@ -1,8 +1,84 @@
-// Handler básico para salvar expediente (placeholder)
+const AgendaSettings = require('../models/AgendaSettings');
+const User = require('../models/User');
+
+// Handler para salvar expediente
 exports.saveExpediente = async (req, res) => {
-	// Aqui você pode validar e salvar o expediente no banco futuramente
-	// Por enquanto, apenas retorna sucesso para o frontend
-	res.status(200).json({ message: 'Expediente salvo com sucesso!' });
+	try {
+		const tenantId = req.tenant?.id;
+		const {
+			diasCalendario = [],
+			diasSelecionados = [],
+			inicioExpediente,
+			fimExpediente,
+			inicioAlmoco,
+			fimAlmoco,
+			professionalId,
+			applyToAll
+		} = req.body;
+
+		if (!tenantId) {
+			return res.status(400).json({ message: 'TenantId e obrigatorio.' });
+		}
+		if (!inicioExpediente || !fimExpediente) {
+			return res.status(400).json({ message: 'Inicio e fim do expediente sao obrigatorios.' });
+		}
+
+		const payload = {
+			tenantId,
+			professionalId: professionalId || null,
+			inicioExpediente,
+			fimExpediente,
+			inicioAlmoco: inicioAlmoco || null,
+			fimAlmoco: fimAlmoco || null,
+			diasCalendario: Array.isArray(diasCalendario) ? JSON.stringify(diasCalendario) : null,
+			diasSelecionados: Array.isArray(diasSelecionados) ? JSON.stringify(diasSelecionados) : null
+		};
+
+		if (applyToAll) {
+			const users = await User.findAll({
+				where: { tenantId, isBarber: true },
+				attributes: ['id']
+			});
+			if (!users.length) {
+				return res.status(400).json({ message: 'Nenhum barbeiro encontrado para aplicar o expediente.' });
+			}
+
+			for (const user of users) {
+				const userPayload = { ...payload, professionalId: user.id };
+				const existingUser = await AgendaSettings.findOne({
+					where: {
+						tenantId,
+						professionalId: user.id
+					}
+				});
+				if (existingUser) {
+					await existingUser.update(userPayload);
+				} else {
+					await AgendaSettings.create(userPayload);
+				}
+			}
+
+			return res.status(200).json({ message: 'Expediente salvo para todos os barbeiros.' });
+		}
+
+		const existing = await AgendaSettings.findOne({
+			where: {
+				tenantId,
+				professionalId: professionalId || null
+			}
+		});
+
+		if (existing) {
+			await existing.update(payload);
+		} else {
+			await AgendaSettings.create(payload);
+		}
+
+		res.status(200).json({ message: 'Expediente salvo com sucesso!' });
+	} catch (error) {
+		console.error('Erro ao salvar expediente:', error);
+		res.status(500).json({ message: 'Nao foi possivel salvar o expediente.' });
+	}
 };
 const Indisponibilidade = require('../models/Indisponibilidade');
 const EncerramentoAntecipado = require('../models/EncerramentoAntecipado');

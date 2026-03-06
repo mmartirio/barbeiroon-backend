@@ -1,5 +1,7 @@
 const AppointmentService = require('../services/appointmentService');
 const User = require('../models/User');
+const AppointmentRequest = require('../models/AppointmentRequest');
+const Service = require('../models/Service');
 
 exports.getAll = async (req, res) => {
     try {
@@ -171,5 +173,173 @@ exports.getAllGroupedByDate = async (req, res) => {
     } catch (error) {
         console.error('Erro ao carregar agendamentos agrupados:', error);
         res.status(500).json({ message: 'Nao foi possivel carregar os agendamentos.' });
+    }
+};
+
+const overlaps = (start, duration, otherStart, otherDuration) => {
+    const end = start + duration;
+    const otherEnd = otherStart + otherDuration;
+    return start < otherEnd && end > otherStart;
+};
+
+const parseTimeToMinutes = (value) => {
+    if (!value) return null;
+    const [h, m] = String(value).split(':');
+    if (h === undefined || m === undefined) return null;
+    return parseInt(h, 10) * 60 + parseInt(m, 10);
+};
+
+exports.listPendingRequests = async (req, res) => {
+    try {
+        const tenantId = req.tenant.id;
+        const requests = await AppointmentRequest.findAll({
+            where: { tenantId, status: 'pending' },
+            order: [['createdAt', 'ASC']]
+        });
+
+        const now = new Date();
+        for (const request of requests) {
+            if (request.status === 'pending' && now > new Date(request.expiresAt)) {
+                await request.update({ status: 'expired' });
+            }
+        }
+
+        const filtered = requests.filter((r) => r.status === 'pending');
+
+        const serviceIds = filtered.map((r) => r.serviceId);
+        const professionalIds = filtered.map((r) => r.professionalId);
+
+        const services = await Service.findAll({
+            where: { id: serviceIds, tenantId },
+            attributes: ['id', 'name']
+        });
+        const professionals = await User.findAll({
+            where: { id: professionalIds, tenantId },
+            attributes: ['id', 'name']
+        });
+
+        const serviceMap = new Map(services.map((s) => [String(s.id), s.name]));
+        const professionalMap = new Map(professionals.map((p) => [String(p.id), p.name]));
+
+        const result = filtered.map((request) => {
+            const plain = typeof request.get === 'function' ? request.get({ plain: true }) : request;
+            return {
+                ...plain,
+                serviceName: serviceMap.get(String(plain.serviceId)) || null,
+                professionalName: professionalMap.get(String(plain.professionalId)) || null
+            };
+        });
+
+        res.status(200).json({ requests: result });
+    } catch (error) {
+        console.error('Erro ao listar solicitacoes pendentes:', error);
+        res.status(500).json({ message: 'Nao foi possivel carregar solicitacoes.' });
+    }
+};
+
+exports.listPendingRequestsOwn = async (req, res) => {
+    try {
+        const tenantId = req.tenant.id;
+        const professionalId = req.user.id;
+        const requests = await AppointmentRequest.findAll({
+            where: { tenantId, professionalId, status: 'pending' },
+            order: [['createdAt', 'ASC']]
+        });
+
+        const now = new Date();
+        for (const request of requests) {
+            if (request.status === 'pending' && now > new Date(request.expiresAt)) {
+                await request.update({ status: 'expired' });
+            }
+        }
+
+        const filtered = requests.filter((r) => r.status === 'pending');
+
+        const serviceIds = filtered.map((r) => r.serviceId);
+        const services = await Service.findAll({
+            where: { id: serviceIds, tenantId },
+            attributes: ['id', 'name']
+        });
+        const serviceMap = new Map(services.map((s) => [String(s.id), s.name]));
+
+        const result = filtered.map((request) => {
+            const plain = typeof request.get === 'function' ? request.get({ plain: true }) : request;
+            return {
+                ...plain,
+                serviceName: serviceMap.get(String(plain.serviceId)) || null,
+                professionalName: req.user?.name || null
+            };
+        });
+
+        res.status(200).json({ requests: result });
+    } catch (error) {
+        console.error('Erro ao listar solicitacoes pendentes do barbeiro:', error);
+        res.status(500).json({ message: 'Nao foi possivel carregar solicitacoes.' });
+    }
+};
+
+exports.approveRequest = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const tenantId = req.tenant.id;
+        const request = await AppointmentRequest.findOne({ where: { id, tenantId } });
+        if (!request) {
+            return res.status(404).json({ message: 'Solicitacao nao encontrada.' });
+        }
+        if (request.status !== 'pending') {
+            return res.status(400).json({ message: 'Solicitacao nao esta pendente.' });
+        }
+        if (new Date() > new Date(request.expiresAt)) {
+            await request.update({ status: 'expired' });
+            return res.status(400).json({ message: 'Solicitacao expirada.' });
+        }
+
+        const existing = await AppointmentService.getByProfessional(request.professionalId, tenantId, request.appointmentDate);
+        const existingRanges = existing.map((appt) => {
+            const start = parseTimeToMinutes(appt.appointmentTime);
+            const duration = appt.service?.duration
+                ? parseInt(String(appt.service.duration).split(':')[0], 10) * 60 + parseInt(String(appt.service.duration).split(':')[1], 10)
+                : 30;
+            return { start, duration };
+        }).filter((range) => range.start !== null);
+
+        const requestedStart = parseTimeToMinutes(request.appointmentTime);
+        const requestedDuration = parseInt(request.durationMinutes, 10);
+        if (existingRanges.some((range) => overlaps(requestedStart, requestedDuration, range.start, range.duration))) {
+            return res.status(409).json({ message: 'Horario conflita com outro agendamento.' });
+        }
+
+        await AppointmentService.create({
+            customerPhone: request.customerPhone,
+            serviceId: request.serviceId,
+            professionalId: request.professionalId,
+            appointmentDate: request.appointmentDate,
+            appointmentTime: request.appointmentTime
+        }, tenantId);
+
+        await request.update({ status: 'approved' });
+        res.status(200).json({ message: 'Solicitacao aprovada.' });
+    } catch (error) {
+        console.error('Erro ao aprovar solicitacao:', error);
+        res.status(500).json({ message: 'Nao foi possivel aprovar solicitacao.' });
+    }
+};
+
+exports.rejectRequest = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const tenantId = req.tenant.id;
+        const request = await AppointmentRequest.findOne({ where: { id, tenantId } });
+        if (!request) {
+            return res.status(404).json({ message: 'Solicitacao nao encontrada.' });
+        }
+        if (request.status !== 'pending') {
+            return res.status(400).json({ message: 'Solicitacao nao esta pendente.' });
+        }
+        await request.update({ status: 'rejected' });
+        res.status(200).json({ message: 'Solicitacao recusada.' });
+    } catch (error) {
+        console.error('Erro ao recusar solicitacao:', error);
+        res.status(500).json({ message: 'Nao foi possivel recusar solicitacao.' });
     }
 };

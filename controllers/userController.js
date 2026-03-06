@@ -43,10 +43,26 @@ exports.getAllUsers = async (req, res) => {
     }
 };
 
+// Função para obter um usuário por id
+exports.getUserById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const tenantId = req.tenant.id;
+        const user = await UserService.findById(id, tenantId);
+        if (!user) {
+            return res.status(404).json({ message: 'Usuário não encontrado' });
+        }
+        res.status(200).json(user);
+    } catch (error) {
+        console.error('Erro ao carregar usuário:', error);
+        res.status(500).json({ message: '😞 Não foi possível carregar o usuário.' });
+    }
+};
+
 // Função para registrar um novo usuário
 exports.register = async (req, res) => {
     try {
-        const { name, email, password, groupId } = req.body;
+        const { name, email, password, groupId, isBarber } = req.body;
         const tenantId = req.tenant.id;
 
         console.log('➡️  userController.register called', { body: { name, email, groupId }, tenantId });
@@ -64,10 +80,10 @@ exports.register = async (req, res) => {
         if (existingUser) {
             return res.status(400).json({ message: '✉️ Este e-mail já está sendo usado por outro usuário. Por favor, utilize um e-mail diferente.' });
         }
-        const newUser = await UserService.createUser({ name, email, password, groupId, tenantId });
+        const newUser = await UserService.createUser({ name, email, password, groupId, tenantId, isBarber });
         res.status(201).json({ 
             message: 'Usuário registrado com sucesso', 
-            user: { id: newUser.id, name: newUser.name, email: newUser.email, groupId: newUser.groupId }
+            user: { id: newUser.id, name: newUser.name, email: newUser.email, groupId: newUser.groupId, isBarber: newUser.isBarber }
         });
     } catch (error) {
         console.error('Erro ao registrar usuário:', error && error.stack ? error.stack : error);

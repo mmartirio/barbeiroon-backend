@@ -68,11 +68,17 @@ class UserService {
         }
     }
 
-    static async createUser({ name, email, password, groupId, tenantId }) {
+    static async createUser({ name, email, password, groupId, tenantId, isBarber }) {
         try {
             const hashedPassword = await bcrypt.hash(password, 10);
             const newUser = await User.create({ 
-                name, email, password: hashedPassword, groupId, tenantId, isActive: true
+                name,
+                email,
+                password: hashedPassword,
+                groupId,
+                tenantId,
+                isActive: true,
+                isBarber: !!isBarber
             });
             return typeof newUser.get === 'function' ? newUser.get({ plain: true }) : newUser;
         } catch (error) {

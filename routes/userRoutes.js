@@ -13,6 +13,9 @@ router.get('/barbers/:tenantId', userController.getAllBarbersPublic);
 // Rota para obter todos os usuários
 router.get('/users', checkPermission('canViewUsers'), userController.getAllUsers);
 
+// Rota para obter um usuário por id
+router.get('/:id', checkPermission('canViewUsers'), userController.getUserById);
+
 // Rota para registrar um novo usuário
 router.post('/register', userController.register);
 
