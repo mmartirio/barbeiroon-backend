@@ -115,6 +115,12 @@ app.delete('/api/user/:id', async (req, res) => {
     }
 });
 
+
+// Rota de healthcheck para Docker e testes externos
+app.get('/', (req, res) => {
+    res.status(200).json({ status: 'ok', message: 'API Meu Barbeiro rodando!' });
+});
+
 // Middleware para capturar erros internos do servidor (deve vir no final)
 app.use((err, req, res, next) => {
     console.error(err.stack);
