@@ -39,6 +39,12 @@ const Appointment = sequelize.define('Appointment', {
         allowNull: false,
         field: 'appointment_time',
     },
+    status: {
+        type: DataTypes.STRING(20),
+        allowNull: false,
+        defaultValue: 'agendado',
+        field: 'status',
+    },
     tenantId: {
         type: DataTypes.INTEGER,
         allowNull: false,

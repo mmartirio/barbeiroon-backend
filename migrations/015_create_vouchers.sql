@@ -1,0 +1,13 @@
+CREATE TABLE IF NOT EXISTS vouchers (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    code VARCHAR(32) NOT NULL UNIQUE,
+    customer_phone VARCHAR(20) NOT NULL,
+    tenant_id INT NOT NULL,
+    promotion_id INT NOT NULL,
+    used BOOLEAN NOT NULL DEFAULT FALSE,
+    expires_at DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (promotion_id) REFERENCES promotions(id),
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+);

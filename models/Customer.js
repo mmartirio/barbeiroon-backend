@@ -14,7 +14,7 @@ Customer.init({
         allowNull: false,
     },
     birthDate: {
-        type: DataTypes.DATE,
+        type: DataTypes.DATEONLY,
         allowNull: true,
         field: 'birth_date',
     },

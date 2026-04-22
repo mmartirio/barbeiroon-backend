@@ -6,7 +6,16 @@ exports.getAllUsersPublic = async (req, res) => {
             where: { tenantId, isActive: true },
             attributes: ['id', 'name']
         });
-        res.status(200).json({ users });
+
+        const mappedUsers = users.map((u) => {
+            const plain = typeof u.get === 'function' ? u.get({ plain: true }) : u;
+            return {
+                ...plain,
+                imageUrl: null,
+            };
+        });
+
+        res.status(200).json({ users: mappedUsers });
     } catch (error) {
         console.error('Erro ao carregar usuários públicos:', error);
         res.status(500).json({ message: 'Não foi possível carregar os usuários.' });
@@ -21,13 +30,40 @@ exports.getAllBarbersPublic = async (req, res) => {
             where: { tenantId, isActive: true, isBarber: true },
             attributes: ['id', 'name']
         });
-        res.status(200).json({ users });
+
+        const mappedUsers = users.map((u) => {
+            const plain = typeof u.get === 'function' ? u.get({ plain: true }) : u;
+            return {
+                ...plain,
+                imageUrl: null,
+            };
+        });
+
+        res.status(200).json({ users: mappedUsers });
     } catch (error) {
         console.error('Erro ao carregar barbeiros públicos:', error);
         res.status(500).json({ message: 'Não foi possível carregar os barbeiros.' });
     }
 };
 const UserService = require('../services/userService');
+const Image = require('../models/Image');
+
+const saveProfileImage = async ({ profileImageBase64, profileImageContentType }) => {
+    if (!profileImageBase64) return null;
+
+    const normalizedBase64 = String(profileImageBase64)
+        .replace(/^data:image\/[a-zA-Z+.-]+;base64,/, '')
+        .trim();
+
+    if (!normalizedBase64) return null;
+
+    const image = await Image.create({
+        data: Buffer.from(normalizedBase64, 'base64'),
+        contentType: profileImageContentType || 'image/jpeg',
+    });
+
+    return image.id;
+};
 
 // Função para obter todos os usuários
 exports.getAllUsers = async (req, res) => {
@@ -62,7 +98,7 @@ exports.getUserById = async (req, res) => {
 // Função para registrar um novo usuário
 exports.register = async (req, res) => {
     try {
-        const { name, email, password, groupId, isBarber } = req.body;
+        const { name, email, password, groupId, isBarber, profileImageBase64, profileImageContentType } = req.body;
         const tenantId = req.tenant.id;
 
         console.log('➡️  userController.register called', { body: { name, email, groupId }, tenantId });
@@ -80,10 +116,26 @@ exports.register = async (req, res) => {
         if (existingUser) {
             return res.status(400).json({ message: '✉️ Este e-mail já está sendo usado por outro usuário. Por favor, utilize um e-mail diferente.' });
         }
-        const newUser = await UserService.createUser({ name, email, password, groupId, tenantId, isBarber });
+        const profileImageId = await saveProfileImage({ profileImageBase64, profileImageContentType });
+        const newUser = await UserService.createUser({
+            name,
+            email,
+            password,
+            groupId,
+            tenantId,
+            isBarber,
+            profileImageId,
+        });
         res.status(201).json({ 
             message: 'Usuário registrado com sucesso', 
-            user: { id: newUser.id, name: newUser.name, email: newUser.email, groupId: newUser.groupId, isBarber: newUser.isBarber }
+            user: {
+                id: newUser.id,
+                name: newUser.name,
+                email: newUser.email,
+                groupId: newUser.groupId,
+                isBarber: newUser.isBarber,
+                profileImageId: newUser.profileImageId,
+            }
         });
     } catch (error) {
         console.error('Erro ao registrar usuário:', error && error.stack ? error.stack : error);
@@ -111,7 +163,7 @@ exports.deleteUser = async (req, res) => {
 exports.userEdit = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, email, groupId, isBarber } = req.body;
+        const { name, email, groupId, isBarber, profileImageBase64, profileImageContentType } = req.body;
         const tenantId = req.tenant.id;
 
         if (email) {
@@ -120,7 +172,15 @@ exports.userEdit = async (req, res) => {
                 return res.status(400).json({ message: '✉️ Este e-mail já está sendo usado por outro usuário.' });
             }
         }
-        const updatedUser = await UserService.updateUser(id, { name, email, groupId, isBarber, tenantId });
+        const profileImageId = await saveProfileImage({ profileImageBase64, profileImageContentType });
+        const updatedUser = await UserService.updateUser(id, {
+            name,
+            email,
+            groupId,
+            isBarber,
+            tenantId,
+            ...(profileImageId ? { profileImageId } : {}),
+        });
         if (!updatedUser) {
             return res.status(404).json({ message: '🔍 Usuário não encontrado para edição.' });
         }

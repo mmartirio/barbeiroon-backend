@@ -1,7 +1,77 @@
 const AppointmentService = require('../services/appointmentService');
+const WhatsAppService = require('../services/whatsappService');
 const User = require('../models/User');
 const AppointmentRequest = require('../models/AppointmentRequest');
 const Service = require('../models/Service');
+const sequelize = require('../config/db');
+
+const APPOINTMENT_STATUS = Object.freeze({
+    PENDENTE: 'pendente',
+    AGENDADO: 'agendado',
+    CANCELADO: 'cancelado',
+    CONCLUIDO: 'concluido',
+});
+
+let completedAppointmentsTableReady = false;
+
+const ensureCompletedAppointmentsTable = async () => {
+    if (completedAppointmentsTableReady) return;
+
+    await sequelize.query(`
+        CREATE TABLE IF NOT EXISTS completed_appointments (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            tenant_id INT NOT NULL,
+            appointment_id INT NULL,
+            service_id INT NULL,
+            professional_id INT NULL,
+            customer_phone VARCHAR(20) NULL,
+            appointment_date DATE NULL,
+            appointment_time TIME NULL,
+            revenue_value DECIMAL(10,2) NOT NULL DEFAULT 0,
+            completed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_completed_tenant_month (tenant_id, completed_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+
+    completedAppointmentsTableReady = true;
+};
+
+const registerCompletedAppointment = async ({ appointment, tenantId }) => {
+    if (!appointment || !tenantId) return;
+
+    await ensureCompletedAppointmentsTable();
+
+    const revenueValue = Number(appointment?.service?.price || 0);
+
+    await sequelize.query(
+        `
+            INSERT INTO completed_appointments (
+                tenant_id,
+                appointment_id,
+                service_id,
+                professional_id,
+                customer_phone,
+                appointment_date,
+                appointment_time,
+                revenue_value,
+                completed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+        `,
+        {
+            replacements: [
+                tenantId,
+                appointment.id || null,
+                appointment.serviceId || appointment.service?.id || null,
+                appointment.professionalId || null,
+                appointment.customerPhone || appointment.customer?.phone || null,
+                appointment.appointmentDate || null,
+                appointment.appointmentTime || null,
+                Number.isNaN(revenueValue) ? 0 : revenueValue
+            ]
+        }
+    );
+};
 
 exports.getAll = async (req, res) => {
     try {
@@ -20,6 +90,33 @@ exports.create = async (req, res) => {
     try {
         const tenantId = req.tenant.id;
         const appointment = await AppointmentService.create(req.body, tenantId);
+
+        const createdAppointment = await AppointmentService.getById(appointment.id, tenantId);
+        const createdPlain = createdAppointment && typeof createdAppointment.get === 'function'
+            ? createdAppointment.get({ plain: true })
+            : createdAppointment;
+
+        const barber = createdPlain?.professionalId
+            ? await User.findOne({
+                where: { id: createdPlain.professionalId, tenantId },
+                attributes: ['id', 'name']
+            })
+            : null;
+
+        const notifyResult = await WhatsAppService.sendCompletionMessage({
+            to: req.tenant?.phone || null,
+            barberName: barber?.name || `Profissional ${createdPlain?.professionalId || '-'}`,
+            customerName: createdPlain?.customer?.name,
+            customerPhone: createdPlain?.customer?.phone || createdPlain?.customerPhone,
+            serviceName: createdPlain?.service?.name,
+            appointmentDate: createdPlain?.appointmentDate,
+            appointmentTime: String(createdPlain?.appointmentTime || '').slice(0, 5)
+        });
+
+        if (!notifyResult?.success && !notifyResult?.skipped) {
+            console.error('Falha na notificacao WhatsApp de novo agendamento:', notifyResult);
+        }
+
         res.status(201).json(appointment);
     } catch (error) {
         console.error('Erro ao criar agendamento:', error);
@@ -75,19 +172,85 @@ const canAccessOwnAppointments = async (req) => {
 
 exports.getOwn = async (req, res) => {
     try {
+        const tenantId = req.tenant.id;
+        const professionalId = req.user.id;
+        const includeAll = String(req.query.includeAll || '').toLowerCase() === 'true' || String(req.query.includeAll || '') === '1';
+        const includeTenant = String(req.query.includeTenant || '').toLowerCase() === 'true' || String(req.query.includeTenant || '') === '1';
+        const date = includeAll ? null : (req.query.date || getTodayDateString());
+
+        if (includeTenant) {
+            const tenantAppointments = await AppointmentService.getAllGroupedByProfessional(tenantId, date);
+
+            const userIds = tenantAppointments
+                .filter((appointment) => appointment && appointment.professionalId)
+                .map((appointment) => appointment.professionalId);
+
+            const users = await User.findAll({
+                where: { id: userIds, tenantId },
+                attributes: ['id', 'name']
+            });
+
+            const userMap = new Map(users.map((user) => [String(user.id), user.name]));
+
+            const withProfessionalName = tenantAppointments.map((appointment) => {
+                const plain = typeof appointment.get === 'function' ? appointment.get({ plain: true }) : appointment;
+                return {
+                    ...plain,
+                    professionalName: plain?.professional?.name || userMap.get(String(plain.professionalId)) || null,
+                    status: plain?.status || APPOINTMENT_STATUS.AGENDADO,
+                };
+            });
+
+            return res.status(200).json({ appointments: withProfessionalName, date, scope: 'tenant' });
+        }
+
         const allowed = await canAccessOwnAppointments(req);
         if (!allowed) {
             return res.status(403).json({ message: 'Voce nao tem permissao para ver seus agendamentos.' });
         }
 
-        const tenantId = req.tenant.id;
-        const professionalId = req.user.id;
-        const date = req.query.date || getTodayDateString();
         const appointments = await AppointmentService.getByProfessional(professionalId, tenantId, date);
         res.status(200).json({ appointments, date });
     } catch (error) {
         console.error('Erro ao carregar agendamentos do barbeiro:', error);
         res.status(500).json({ message: 'Nao foi possivel carregar os agendamentos.' });
+    }
+};
+
+exports.getCompletedOwn = async (req, res) => {
+    try {
+        const tenantId = req.tenant.id;
+        const professionalId = req.user.id;
+        const includeAll = String(req.query.includeAll || '').toLowerCase() === 'true' || String(req.query.includeAll || '') === '1';
+        const includeTenant = String(req.query.includeTenant || '').toLowerCase() === 'true' || String(req.query.includeTenant || '') === '1';
+        const date = includeAll ? null : (req.query.date || getTodayDateString());
+
+        if (includeTenant) {
+            const completed = await AppointmentService.getCompleted({
+                professionalId,
+                tenantId,
+                includeTenant: true,
+                date,
+            });
+            return res.status(200).json({ appointments: completed, date, scope: 'tenant' });
+        }
+
+        const allowed = await canAccessOwnAppointments(req);
+        if (!allowed) {
+            return res.status(403).json({ message: 'Voce nao tem permissao para ver seus agendamentos concluidos.' });
+        }
+
+        const completed = await AppointmentService.getCompleted({
+            professionalId,
+            tenantId,
+            includeTenant: false,
+            date,
+        });
+
+        res.status(200).json({ appointments: completed, date });
+    } catch (error) {
+        console.error('Erro ao carregar agendamentos concluidos do barbeiro:', error);
+        res.status(500).json({ message: 'Nao foi possivel carregar os agendamentos concluidos.' });
     }
 };
 
@@ -101,9 +264,27 @@ exports.cancelOwn = async (req, res) => {
         const { id } = req.params;
         const tenantId = req.tenant.id;
         const professionalId = req.user.id;
-        const deleted = await AppointmentService.deleteByProfessional(id, professionalId, tenantId);
-        if (!deleted) {
-            return res.status(404).json({ message: 'Agendamento nao encontrado.' });
+        const canManageTenantAppointments = !!req.user?.permissions?.canViewAppointments;
+
+        let updated = await AppointmentService.updateStatusByProfessional(
+            id,
+            professionalId,
+            tenantId,
+            APPOINTMENT_STATUS.CANCELADO,
+            [APPOINTMENT_STATUS.PENDENTE, APPOINTMENT_STATUS.AGENDADO]
+        );
+
+        if (!updated && canManageTenantAppointments) {
+            updated = await AppointmentService.updateStatus(
+                id,
+                tenantId,
+                APPOINTMENT_STATUS.CANCELADO,
+                [APPOINTMENT_STATUS.PENDENTE, APPOINTMENT_STATUS.AGENDADO]
+            );
+        }
+
+        if (!updated) {
+            return res.status(404).json({ message: 'Agendamento nao encontrado ou status invalido para cancelamento.' });
         }
         res.status(200).json({ message: 'Agendamento cancelado com sucesso' });
     } catch (error) {
@@ -122,11 +303,77 @@ exports.closeOwn = async (req, res) => {
         const { id } = req.params;
         const tenantId = req.tenant.id;
         const professionalId = req.user.id;
-        const deleted = await AppointmentService.deleteByProfessional(id, professionalId, tenantId);
-        if (!deleted) {
+
+        const appointment = await AppointmentService.getById(id, tenantId);
+        if (!appointment) {
             return res.status(404).json({ message: 'Agendamento nao encontrado.' });
         }
-        res.status(200).json({ message: 'Atendimento encerrado com sucesso' });
+
+        const appointmentPlain = typeof appointment.get === 'function' ? appointment.get({ plain: true }) : appointment;
+
+        if (appointmentPlain.status === APPOINTMENT_STATUS.CONCLUIDO) {
+            return res.status(400).json({ message: 'Agendamento ja esta concluido.' });
+        }
+
+        if (appointmentPlain.status === APPOINTMENT_STATUS.CANCELADO) {
+            return res.status(400).json({ message: 'Agendamento cancelado nao pode ser concluido.' });
+        }
+
+        const barber = await User.findOne({
+            where: { id: appointmentPlain.professionalId, tenantId },
+            attributes: ['id', 'name']
+        });
+
+        const canManageTenantAppointments = !!req.user?.permissions?.canViewAppointments;
+
+        let updated = await AppointmentService.updateStatusByProfessional(
+            id,
+            professionalId,
+            tenantId,
+            APPOINTMENT_STATUS.CONCLUIDO,
+            [APPOINTMENT_STATUS.PENDENTE, APPOINTMENT_STATUS.AGENDADO]
+        );
+
+        if (!updated && canManageTenantAppointments) {
+            updated = await AppointmentService.updateStatus(
+                id,
+                tenantId,
+                APPOINTMENT_STATUS.CONCLUIDO,
+                [APPOINTMENT_STATUS.PENDENTE, APPOINTMENT_STATUS.AGENDADO]
+            );
+        }
+
+        if (!updated) {
+            return res.status(404).json({ message: 'Agendamento nao encontrado ou status invalido para conclusao.' });
+        }
+
+        try {
+            await registerCompletedAppointment({ appointment: appointmentPlain, tenantId });
+        } catch (historyError) {
+            console.error('Falha ao registrar historico de conclusao:', historyError);
+        }
+
+        const whatsappRecipient = req.tenant?.phone || null;
+
+        const whatsappResult = await WhatsAppService.sendCompletionMessage({
+            to: whatsappRecipient,
+            barberName: barber?.name || req.user?.name || `Profissional ${appointmentPlain.professionalId}`,
+            customerName: appointmentPlain?.customer?.name,
+            customerPhone: appointmentPlain?.customer?.phone || appointmentPlain?.customerPhone,
+            serviceName: appointmentPlain?.service?.name,
+            appointmentDate: appointmentPlain?.appointmentDate,
+            appointmentTime: String(appointmentPlain?.appointmentTime || '').slice(0, 5)
+        });
+
+        if (!whatsappResult?.success && !whatsappResult?.skipped) {
+            console.error('Falha no envio do WhatsApp apos conclusao:', whatsappResult);
+        }
+
+        res.status(200).json({
+            message: 'Atendimento encerrado com sucesso',
+            whatsappRedirectUrl: whatsappResult?.redirectUrl || null,
+            whatsappSent: !!whatsappResult?.success
+        });
     } catch (error) {
         console.error('Erro ao encerrar agendamento do barbeiro:', error);
         res.status(500).json({ message: 'Nao foi possivel encerrar o atendimento.' });
@@ -136,7 +383,8 @@ exports.closeOwn = async (req, res) => {
 exports.getAllGroupedByDate = async (req, res) => {
     try {
         const tenantId = req.tenant.id;
-        const date = req.query.date || getTodayDateString();
+        const includeAll = String(req.query.includeAll || '').toLowerCase() === 'true' || String(req.query.includeAll || '') === '1';
+        const date = includeAll ? null : (req.query.date || getTodayDateString());
         const appointments = await AppointmentService.getAllGroupedByProfessional(tenantId, date);
 
         const userIds = appointments

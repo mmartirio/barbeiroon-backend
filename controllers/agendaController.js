@@ -35,6 +35,20 @@ exports.saveExpediente = async (req, res) => {
 		};
 
 		if (applyToAll) {
+			const globalPayload = { ...payload, professionalId: null };
+			const existingGlobal = await AgendaSettings.findOne({
+				where: {
+					tenantId,
+					professionalId: null
+				}
+			});
+
+			if (existingGlobal) {
+				await existingGlobal.update(globalPayload);
+			} else {
+				await AgendaSettings.create(globalPayload);
+			}
+
 			const users = await User.findAll({
 				where: { tenantId, isBarber: true },
 				attributes: ['id']

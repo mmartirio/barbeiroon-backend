@@ -8,6 +8,7 @@ class UserService {
             const offset = (page - 1) * limit;
             const { rows, count } = await User.findAndCountAll({
                 where: { tenantId },
+                attributes: ['id', 'name', 'email', 'groupId', 'tenantId', 'isActive', 'isBarber', 'createdAt', 'updatedAt'],
                 include: [{
                     model: Group,
                     as: 'group',
@@ -68,7 +69,7 @@ class UserService {
         }
     }
 
-    static async createUser({ name, email, password, groupId, tenantId, isBarber }) {
+    static async createUser({ name, email, password, groupId, tenantId, isBarber, profileImageId }) {
         try {
             const hashedPassword = await bcrypt.hash(password, 10);
             const newUser = await User.create({ 
@@ -78,7 +79,8 @@ class UserService {
                 groupId,
                 tenantId,
                 isActive: true,
-                isBarber: !!isBarber
+                isBarber: !!isBarber,
+                profileImageId: profileImageId || null,
             });
             return typeof newUser.get === 'function' ? newUser.get({ plain: true }) : newUser;
         } catch (error) {
@@ -96,13 +98,14 @@ class UserService {
         }
     }
 
-    static async updateUser(id, { name, email, groupId, isBarber, tenantId }) {
+    static async updateUser(id, { name, email, groupId, isBarber, tenantId, profileImageId }) {
         try {
             const updatePayload = {};
             if (typeof name !== 'undefined') updatePayload.name = name;
             if (typeof email !== 'undefined') updatePayload.email = email;
             if (typeof groupId !== 'undefined') updatePayload.groupId = groupId;
             if (typeof isBarber !== 'undefined') updatePayload.isBarber = isBarber;
+            if (typeof profileImageId !== 'undefined') updatePayload.profileImageId = profileImageId;
 
             await User.update(updatePayload, { where: { id, tenantId } });
             const user = await User.findOne({ where: { id, tenantId }, include: [{ model: Group, as: 'group' }] });

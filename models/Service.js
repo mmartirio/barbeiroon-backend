@@ -18,6 +18,11 @@ const Service = sequelize.define('Service', {
         type: DataTypes.TEXT,
         allowNull: true,
     },
+    ativo: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+    },
     tenantId: {
         type: DataTypes.INTEGER,
         allowNull: false,

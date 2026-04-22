@@ -50,6 +50,11 @@ User.init({
         defaultValue: false,
         field: 'is_barber',
     },
+    profileImageId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        field: 'profile_image_id',
+    },
 }, {
     sequelize,
     modelName: 'User',

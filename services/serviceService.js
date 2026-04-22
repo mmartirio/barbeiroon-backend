@@ -1,7 +1,53 @@
 const { Op } = require('sequelize');
 const Service = require('../models/Service');
+const sequelize = require('../config/db');
 
 class ServiceService {
+    static #hasAtivoColumnCache = null;
+
+    static normalizeServiceOutput(service) {
+        if (!service) return service;
+
+        const raw = typeof service.get === 'function'
+            ? service.get({ plain: true })
+            : { ...service };
+
+        if (Object.prototype.hasOwnProperty.call(raw, 'ativo')) {
+            const normalized = ServiceService.normalizeAtivo(raw.ativo);
+            raw.ativo = normalized !== undefined ? normalized : true;
+        }
+
+        return raw;
+    }
+
+    static async hasAtivoColumn() {
+        if (ServiceService.#hasAtivoColumnCache !== null) {
+            return ServiceService.#hasAtivoColumnCache;
+        }
+
+        try {
+            const queryInterface = sequelize.getQueryInterface();
+            const description = await queryInterface.describeTable('service');
+            ServiceService.#hasAtivoColumnCache = Boolean(description?.ativo);
+        } catch (error) {
+            // Se falhar ao descrever tabela, segue sem bloquear cadastro.
+            ServiceService.#hasAtivoColumnCache = false;
+        }
+
+        return ServiceService.#hasAtivoColumnCache;
+    }
+
+    static normalizeAtivo(value) {
+        if (value === undefined || value === null) return undefined;
+        if (typeof value === 'boolean') return value;
+        if (typeof value === 'number') return value === 1;
+
+        const text = String(value).trim().toLowerCase();
+        if (['true', '1', 'sim', 'yes', 'on'].includes(text)) return true;
+        if (['false', '0', 'nao', 'não', 'no', 'off'].includes(text)) return false;
+        return undefined;
+    }
+
     static normalizeDuration(value) {
         if (value === undefined || value === null || value === '') {
             return null;
@@ -34,14 +80,25 @@ class ServiceService {
 
         return null;
     }
-    static async getAll({ tenantId, page = 1, limit = 10 }) {
+    static async getAll({ tenantId, page = 1, limit = 10, onlyActive = false }) {
         const offset = (page - 1) * limit;
+        const hasAtivoColumn = await ServiceService.hasAtivoColumn();
         const { rows, count } = await Service.findAndCountAll({
-            where: { tenantId },
+            attributes: hasAtivoColumn ? undefined : { exclude: ['ativo'] },
+            where: {
+                tenantId,
+                ...(onlyActive && hasAtivoColumn ? { ativo: true } : {}),
+            },
             offset,
-            limit
+            limit,
+            order: [['id', 'DESC']]
         });
-        return { services: rows, total: count, page, limit };
+        return {
+            services: rows.map((service) => ServiceService.normalizeServiceOutput(service)),
+            total: count,
+            page,
+            limit
+        };
     }
 
     static async create(data, tenantId) {
@@ -50,11 +107,26 @@ class ServiceService {
             throw new Error('Duracao obrigatoria');
         }
 
-        return await Service.create({
+        const hasAtivoColumn = await ServiceService.hasAtivoColumn();
+        const ativo = ServiceService.normalizeAtivo(data.ativo);
+
+        const payload = {
             ...data,
             duration,
-            tenantId
-        });
+            tenantId,
+        };
+
+        if (hasAtivoColumn) {
+            payload.ativo = ativo !== undefined ? ativo : true;
+        }
+
+        const fields = ['name', 'price', 'duration', 'description', 'tenantId', 'cliente'];
+        if (hasAtivoColumn) {
+            fields.push('ativo');
+        }
+
+        const created = await Service.create(payload, { fields });
+        return ServiceService.normalizeServiceOutput(created);
     }
 
     static async delete(id, tenantId) {
@@ -68,13 +140,25 @@ class ServiceService {
             throw new Error('Duracao obrigatoria');
         }
 
+        const hasAtivoColumn = await ServiceService.hasAtivoColumn();
+        const ativo = ServiceService.normalizeAtivo(data.ativo);
+
         const payload = {
             ...data,
-            ...(duration !== undefined ? { duration } : {})
+            ...(duration !== undefined ? { duration } : {}),
+            ...(hasAtivoColumn && ativo !== undefined ? { ativo } : {})
         };
 
+        if (!hasAtivoColumn && Object.prototype.hasOwnProperty.call(payload, 'ativo')) {
+            delete payload.ativo;
+        }
+
         await Service.update(payload, { where: { id, tenantId } });
-        return await Service.findOne({ where: { id, tenantId } });
+        const updated = await Service.findOne({
+            attributes: hasAtivoColumn ? undefined : { exclude: ['ativo'] },
+            where: { id, tenantId }
+        });
+        return ServiceService.normalizeServiceOutput(updated);
     }
 
     static async getMonthlyRevenue(tenantId, year) {

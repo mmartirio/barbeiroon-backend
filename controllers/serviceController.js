@@ -4,7 +4,7 @@ const ServiceService = require('../services/serviceService');
 exports.getAllPublic = async (req, res) => {
     try {
         const { tenantId } = req.params;
-        const result = await ServiceService.getAll({ tenantId, page: 1, limit: 100 });
+        const result = await ServiceService.getAll({ tenantId, page: 1, limit: 100, onlyActive: true });
         res.status(200).json(result);
     } catch (error) {
         console.error('Erro ao carregar serviços:', error);
@@ -39,7 +39,11 @@ exports.create = async (req, res) => {
     } catch (error) {
         console.error('Erro ao criar serviço:', error);
         const status = error.message === 'Duracao obrigatoria' ? 400 : 500;
-        res.status(status).json({ message: '😞 Não foi possível criar o serviço. Verifique se todos os dados foram preenchidos corretamente.', error: error.message });
+        const technicalMessage = error?.original?.sqlMessage || error?.errors?.[0]?.message || error.message;
+        res.status(status).json({
+            message: '😞 Não foi possível criar o serviço. Verifique se todos os dados foram preenchidos corretamente.',
+            error: technicalMessage,
+        });
     }
 };
 

@@ -1,6 +1,12 @@
+// routes/publicAppointmentRoutes.js
 const express = require('express');
 const router = express.Router();
-const AppointmentService = require('../services/appointmentService');
+
+// CORREÇÃO: Importar o AppointmentService corretamente
+const AppointmentService = require('../services/AppointmentService'); // Note o 'A' maiúsculo
+// OU se o arquivo estiver com letra minúscula:
+// const AppointmentService = require('../services/appointmentService');
+
 const CustomerService = require('../services/customerService');
 const User = require('../models/User');
 const Appointment = require('../models/Appointment');
@@ -9,6 +15,21 @@ const Indisponibilidade = require('../models/Indisponibilidade');
 const EncerramentoAntecipado = require('../models/EncerramentoAntecipado');
 const Service = require('../models/Service');
 const AppointmentRequest = require('../models/AppointmentRequest');
+const Tenant = require('../models/Tenant');
+const WhatsAppService = require('../services/whatsappService');
+const sequelize = require('../config/db');
+const { QueryTypes, Op } = require('sequelize');
+
+const APPOINTMENT_STATUS = Object.freeze({
+    PENDENTE: 'pendente',
+    AGENDADO: 'agendado',
+    CANCELADO: 'cancelado',
+    CONCLUIDO: 'concluido',
+});
+
+// Verificar se o AppointmentService foi carregado
+console.log('🔍 AppointmentService carregado:', typeof AppointmentService);
+console.log('📋 Métodos disponíveis:', Object.keys(AppointmentService || {}));
 
 const parseTimeToMinutes = (value) => {
     if (!value) return null;
@@ -77,7 +98,7 @@ const getAvailableTimes = async ({ professionalId, date, tenantId, serviceId }) 
     const lunchEndMinutes = parseTimeToMinutes(lunchEnd);
 
     if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) {
-        return [];
+        return { availableTimes: [], overflowTimes: [], serviceDuration: 30 };
     }
 
     const dateOnly = String(date).split('T')[0];
@@ -109,7 +130,7 @@ const getAvailableTimes = async ({ professionalId, date, tenantId, serviceId }) 
     if (settings?.diasCalendario) {
         const diasCalendario = JSON.parse(settings.diasCalendario || '[]');
         if (Array.isArray(diasCalendario) && diasCalendario.length > 0 && !diasCalendario.includes(dateOnly)) {
-            return { availableTimes: [], overflowTimes: [] };
+            return { availableTimes: [], overflowTimes: [], serviceDuration };
         }
     }
 
@@ -119,7 +140,7 @@ const getAvailableTimes = async ({ professionalId, date, tenantId, serviceId }) 
             const dateObj = new Date(`${dateOnly}T00:00:00`);
             const weekday = dateObj.getDay();
             if (!diasSelecionados.includes(weekday)) {
-                return { availableTimes: [], overflowTimes: [] };
+                return { availableTimes: [], overflowTimes: [], serviceDuration };
             }
         }
     }
@@ -167,6 +188,7 @@ const getAvailableTimes = async ({ professionalId, date, tenantId, serviceId }) 
             }
         ]
     });
+    
     if (booked.length > 0) {
         const blockedRanges = booked.map((appt) => {
             const start = parseTimeToMinutes(String(appt.appointmentTime).slice(0, 5));
@@ -200,20 +222,17 @@ const getAvailableTimes = async ({ professionalId, date, tenantId, serviceId }) 
 
 /**
  * Endpoint público para criar agendamento
- * Não requer autenticação, mas requer tenantId e customerPhone válidos
  */
 router.post('/create', async (req, res) => {
     try {
         let { customerPhone, serviceId, professionalId, date, tenantId } = req.body;
 
-        // Validações
         if (!customerPhone || !serviceId || !professionalId || !date || !tenantId) {
             return res.status(400).json({ 
                 message: 'Dados incompletos. Campos obrigatórios: customerPhone, serviceId, professionalId, date, tenantId' 
             });
         }
 
-        // Verifica se o cliente existe
         const customer = await CustomerService.getCustomerByPhone(customerPhone, tenantId);
         if (!customer) {
             return res.status(404).json({ 
@@ -269,7 +288,7 @@ router.post('/create', async (req, res) => {
             });
         }
 
-        // Cria o agendamento
+        // Usar o AppointmentService para criar
         const appointment = await AppointmentService.create({
             customerPhone,
             serviceId,
@@ -277,13 +296,68 @@ router.post('/create', async (req, res) => {
             date
         }, tenantId);
 
+        // Buscar o agendamento completo
+        const createdAppointment = await Appointment.findOne({
+            where: { id: appointment.id, tenantId },
+            include: [
+                {
+                    model: Customer,
+                    as: 'customer',
+                    attributes: ['phone', 'name', 'birthDate']
+                },
+                {
+                    model: Service,
+                    as: 'service',
+                    attributes: ['id', 'name', 'price', 'duration']
+                },
+                {
+                    model: User,
+                    as: 'professional',
+                    attributes: ['id', 'name']
+                }
+            ]
+        });
+
+        const createdPlain = createdAppointment && typeof createdAppointment.get === 'function'
+            ? createdAppointment.get({ plain: true })
+            : createdAppointment;
+
+        let barber = null;
+        if (createdPlain?.professionalId) {
+            barber = await User.findOne({
+                where: { id: createdPlain.professionalId, tenantId },
+                attributes: ['id', 'name']
+            });
+        }
+
+        const tenant = await Tenant.findByPk(tenantId, { attributes: ['id', 'phone'] });
+
+        // Tenta enviar notificação
+        try {
+            const notifyResult = await WhatsAppService.sendCompletionMessage({
+                to: tenant?.phone || null,
+                barberName: barber?.name || `Profissional ${createdPlain?.professionalId || '-'}`,
+                customerName: createdPlain?.customer?.name || customer?.name,
+                customerPhone: createdPlain?.customer?.phone || createdPlain?.customerPhone || customerPhone,
+                serviceName: createdPlain?.service?.name,
+                appointmentDate: createdPlain?.appointmentDate,
+                appointmentTime: String(createdPlain?.appointmentTime || '').slice(0, 5)
+            });
+
+            if (!notifyResult?.success && !notifyResult?.skipped) {
+                console.error('Falha na notificacao WhatsApp:', notifyResult);
+            }
+        } catch (notifyError) {
+            console.error('Erro ao enviar notificação WhatsApp:', notifyError);
+        }
+
         res.status(201).json({ 
             message: 'Agendamento criado com sucesso!',
-            appointment 
+            appointment: createdPlain 
         });
     } catch (error) {
         console.error('Erro ao criar agendamento público:', error);
-        res.status(500).json({ message: 'Erro ao criar agendamento' });
+        res.status(500).json({ message: 'Erro ao criar agendamento: ' + error.message });
     }
 });
 
@@ -309,20 +383,80 @@ router.get('/by-customer', async (req, res) => {
 
         const userMap = new Map(users.map(u => [String(u.id), u.name]));
 
-        const result = appointments.map(a => {
+        const activeAppointments = appointments.map(a => {
             const plain = typeof a.get === 'function' ? a.get({ plain: true }) : a;
             const professionalName = plain.professional?.name || userMap.get(String(plain.professionalId)) || null;
-            return { ...plain, professionalName };
+            return {
+                ...plain,
+                professionalName,
+                status: plain.status || APPOINTMENT_STATUS.AGENDADO
+            };
         });
+
+        let completedAppointments = [];
+        try {
+            const completedRaw = await sequelize.query(
+                `
+                    SELECT
+                        ca.id,
+                        ca.appointment_id AS appointmentId,
+                        ca.customer_phone AS customerPhone,
+                        ca.professional_id AS professionalId,
+                        ca.service_id AS serviceId,
+                        ca.appointment_date AS appointmentDate,
+                        ca.appointment_time AS appointmentTime,
+                        ca.completed_at AS completedAt,
+                        s.name AS serviceName,
+                        u.name AS professionalName
+                    FROM completed_appointments ca
+                    LEFT JOIN service s ON s.id = ca.service_id
+                    LEFT JOIN user u ON u.id = ca.professional_id
+                    WHERE ca.tenant_id = :tenantId
+                      AND ca.customer_phone = :customerPhone
+                    ORDER BY ca.completed_at DESC
+                `,
+                {
+                    replacements: { tenantId, customerPhone },
+                    type: QueryTypes.SELECT
+                }
+            );
+
+            completedAppointments = completedRaw.map((item) => ({
+                id: item.appointmentId || `completed-${item.id}`,
+                customerPhone: item.customerPhone,
+                professionalId: item.professionalId,
+                professionalName: item.professionalName || null,
+                serviceId: item.serviceId,
+                service: item.serviceName ? { name: item.serviceName } : null,
+                appointmentDate: item.appointmentDate,
+                appointmentTime: item.appointmentTime,
+                completedAt: item.completedAt,
+                status: APPOINTMENT_STATUS.CONCLUIDO
+            }));
+        } catch (error) {
+            if (!(error && error.original && error.original.code === 'ER_NO_SUCH_TABLE')) {
+                console.error('Erro ao buscar agendamentos concluídos:', error);
+            }
+        }
+
+        const existingIds = new Set(activeAppointments.map((item) => String(item.id)));
+        const completedOnly = completedAppointments.filter((item) => !existingIds.has(String(item.id)));
+
+        const result = [...activeAppointments, ...completedOnly]
+            .sort((a, b) => {
+                const aDateTime = `${a.appointmentDate || ''} ${String(a.appointmentTime || '').slice(0, 5)}`;
+                const bDateTime = `${b.appointmentDate || ''} ${String(b.appointmentTime || '').slice(0, 5)}`;
+                return bDateTime.localeCompare(aDateTime);
+            });
 
         res.status(200).json({ appointments: result });
     } catch (error) {
         console.error('Erro ao listar agendamentos públicos:', error);
-        res.status(500).json({ message: 'Erro ao listar agendamentos' });
+        res.status(500).json({ message: 'Erro ao listar agendamentos: ' + error.message });
     }
 });
 
-// Endpoint publico para cancelar agendamento do cliente
+// Endpoint publico para cancelar agendamento
 router.post('/cancel', async (req, res) => {
     try {
         const { appointmentId, customerPhone, tenantId } = req.body;
@@ -331,21 +465,26 @@ router.post('/cancel', async (req, res) => {
             return res.status(400).json({ message: 'Campos obrigatórios: appointmentId, customerPhone, tenantId' });
         }
 
-        const deleted = await AppointmentService.deleteByCustomer(appointmentId, customerPhone, tenantId);
-        if (!deleted) {
-            return res.status(404).json({ message: 'Agendamento não encontrado.' });
+        const updated = await AppointmentService.updateStatusByCustomer(
+            appointmentId,
+            customerPhone,
+            tenantId,
+            APPOINTMENT_STATUS.CANCELADO,
+            [APPOINTMENT_STATUS.PENDENTE, APPOINTMENT_STATUS.AGENDADO]
+        );
+        
+        if (!updated) {
+            return res.status(404).json({ message: 'Agendamento não encontrado ou não pode ser cancelado.' });
         }
 
         res.status(200).json({ message: 'Agendamento cancelado com sucesso' });
     } catch (error) {
         console.error('Erro ao cancelar agendamento público:', error);
-        res.status(500).json({ message: 'Erro ao cancelar agendamento' });
+        res.status(500).json({ message: 'Erro ao cancelar agendamento: ' + error.message });
     }
 });
 
-/**
- * Endpoint público para listar horários disponíveis
- */
+// Endpoint público para listar horários disponíveis
 router.get('/available-times', async (req, res) => {
     try {
         let { professionalId, date, tenantId, serviceId } = req.query;
@@ -374,14 +513,16 @@ router.get('/available-times', async (req, res) => {
         });
     } catch (error) {
         console.error('Erro ao buscar horários disponíveis:', error);
-        res.status(500).json({ message: 'Erro ao buscar horários disponíveis' });
+        res.status(500).json({ message: 'Erro ao buscar horários disponíveis: ' + error.message });
     }
 });
 
+// Endpoint para buscar solicitação de agendamento pendente
 router.get('/request/:id', async (req, res) => {
     try {
         const { id } = req.params;
         const { customerPhone, tenantId } = req.query;
+        
         if (!id || !customerPhone || !tenantId) {
             return res.status(400).json({ message: 'Parametros obrigatorios: id, customerPhone, tenantId' });
         }
@@ -405,7 +546,7 @@ router.get('/request/:id', async (req, res) => {
         });
     } catch (error) {
         console.error('Erro ao buscar solicitacao:', error);
-        res.status(500).json({ message: 'Erro ao buscar solicitacao' });
+        res.status(500).json({ message: 'Erro ao buscar solicitacao: ' + error.message });
     }
 });
 
