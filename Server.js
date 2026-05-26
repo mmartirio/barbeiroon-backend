@@ -27,6 +27,9 @@ const Group = require('./models/Group');
 const Customer = require('./models/Customer');
 const tenantMiddleware = require('./middlewares/tenantMiddleware');
 const cacheMiddleware = require('./utils/cacheMiddleware');
+const whatsappRoutes = require('./routes/whatsappRoutes');
+const superAdminRoutes = require('./routes/superAdminRoutes');
+const ReminderService = require('./services/reminderService');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -42,15 +45,52 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 // CORS
+const ALLOWED_ORIGINS = [
+    'http://localhost:3000',
+    'http://localhost:3002',
+    'http://localhost:5173',
+    'http://localhost',
+    'http://localhost:80',
+    'http://192.168.0.10:3001',
+    // Vercel — adicione a URL exata do seu projeto após o deploy
+    'https://barbeiroon.vercel.app',
+    // Preview deployments da Vercel
+    /^https:\/\/.*\.vercel\.app$/,
+];
 app.use(cors({
-    origin: ['http://localhost:3000', 'http://localhost:3002', 'http://localhost', 'http://localhost:80', 'http://192.168.0.10:3001'],
+    origin: (origin, callback) => {
+        // Sem origin = server-to-server (proxy Vercel) ou app mobile (React Native)
+        if (!origin) return callback(null, true);
+        const allowed = ALLOWED_ORIGINS.some((o) =>
+            o instanceof RegExp ? o.test(origin) : o === origin
+        );
+        callback(allowed ? null : new Error('CORS: origem não permitida'), allowed);
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Tenant-Slug', 'Cache-Control']
 }));
 
 app.options('*', cors());
-app.use(express.json());
+
+// Remove information disclosure header
+app.disable('x-powered-by');
+
+// Security headers
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'self'");
+    if (process.env.NODE_ENV === 'production') {
+        res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
+    next();
+});
+
+// Limit body size to prevent DoS via large payloads (returns 413 above 200kb)
+app.use(express.json({ limit: '200kb' }));
 app.use('/uploads', express.static(require('path').join(__dirname, 'uploads')));
 
 // Rotas
@@ -80,6 +120,9 @@ app.use('/api/appointment', tenantMiddleware, appointmentRoutes);
 app.use('/api/report', tenantMiddleware, reportRoutes);  // singular
 app.use('/api/reports', tenantMiddleware, reportRoutes); // plural (para compatibilidade)
 
+app.use('/api/whatsapp', whatsappRoutes);
+app.use('/api/gestor', superAdminRoutes);
+
 // Rota pública para listar usuários do tenant
 app.use('/api/public/users', require('./routes/userRoutes'));
 
@@ -108,10 +151,28 @@ app.get('/api/test', (req, res) => {
     res.json({ message: 'API está funcionando!', timestamp: new Date() });
 });
 
-// Middleware de erro
+// Middleware de erro — trata erros de parsing, uploads e payloads grandes
 app.use((err, req, res, next) => {
+    if (err.type === 'entity.too.large') {
+        return res.status(413).json({ message: 'Payload muito grande. Limite de 200kb.' });
+    }
+    if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+        return res.status(400).json({ message: 'JSON inválido na requisição.' });
+    }
+    // Erros do Multer (upload de arquivo)
+    const multer = require('multer');
+    if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+            return res.status(413).json({ message: 'Arquivo muito grande. Máximo permitido: 5 MB.' });
+        }
+        return res.status(400).json({ message: `Upload inválido: ${err.message}` });
+    }
+    // Erro de tipo de arquivo (lançado pelo fileFilter do upload.js)
+    if (err && err.code === 'INVALID_FILE_TYPE') {
+        return res.status(400).json({ message: 'Tipo de arquivo não permitido. Envie apenas imagens (JPG, PNG, GIF, WebP).' });
+    }
     console.error(err.stack);
-    res.status(500).json({ message: 'Erro interno do servidor', error: err.message });
+    res.status(500).json({ message: 'Erro interno do servidor' });
 });
 
 // Conectar ao banco e iniciar servidor
@@ -119,6 +180,102 @@ app.use((err, req, res, next) => {
     try {
         await sequelize.authenticate();
         console.log('✅ Conectado ao MySQL com sucesso!');
+
+        // Cria tabelas ausentes sem alterar as existentes (seguro para primeiro deploy em Docker)
+        await sequelize.sync({ force: false });
+        console.log('✅ Tabelas sincronizadas');
+
+        // Migração: adiciona colunas ausentes nas tabelas
+        const columnsToAdd = [
+            { table: 'appointment', column: 'status',       ddl: `ALTER TABLE appointment ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'agendado'` },
+            { table: 'appointment', column: 'promotion_id', ddl: `ALTER TABLE appointment ADD COLUMN promotion_id INT NULL` },
+            { table: 'tenants',     column: 'plan_id',      ddl: `ALTER TABLE tenants ADD COLUMN plan_id INT NULL` },
+            { table: 'plans',       column: 'is_default',   ddl: `ALTER TABLE plans ADD COLUMN is_default TINYINT(1) NOT NULL DEFAULT 0` },
+            { table: 'plans',       column: 'trial_months', ddl: `ALTER TABLE plans ADD COLUMN trial_months INT NULL` },
+            { table: 'plans',       column: 'sort_order',   ddl: `ALTER TABLE plans ADD COLUMN sort_order INT NOT NULL DEFAULT 0` },
+        ];
+        for (const { table, column, ddl } of columnsToAdd) {
+            try {
+                const [rows] = await sequelize.query(
+                    `SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.COLUMNS
+                     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table AND COLUMN_NAME = :column`,
+                    { replacements: { table, column }, type: sequelize.constructor.QueryTypes.SELECT }
+                );
+                if ((rows?.cnt ?? rows?.CNT ?? 0) === 0) {
+                    await sequelize.query(ddl);
+                    console.log(`✅ Coluna '${column}' adicionada à tabela ${table}`);
+                }
+            } catch (e) {
+                console.warn(`⚠️ Migração da coluna '${column}' em ${table}:`, e.message);
+            }
+        }
+
+        // Cria tabelas do gestor se não existirem
+        const Plan = require('./models/Plan');
+        const PaymentMethod = require('./models/PaymentMethod');
+        const GestorAdmin = require('./models/GestorAdmin');
+        await Plan.sync({ alter: false });
+        await PaymentMethod.sync({ alter: false });
+        await GestorAdmin.sync({ alter: false });
+
+        // Seed: cria ou corrige o plano Grátis padrão
+        const defaultPlan = await Plan.findOne({ where: { isDefault: true } });
+        if (!defaultPlan) {
+            await Plan.create({
+                name: 'Grátis',
+                description: 'Plano gratuito com recursos básicos para começar.',
+                priceMonthly: 0,
+                priceAnnual: 0,
+                maxUsers: 2,
+                maxAppointments: 50,
+                isActive: true,
+                isDefault: true,
+                trialMonths: 1,
+                sortOrder: 0,
+                features: [
+                    'Agendamento pelo painel',
+                    'Agendamento online por clientes',
+                    'Validação de conflito de horário',
+                    'Configuração de expediente',
+                    'Clientes agendados por período',
+                    'Cadastro de clientes',
+                    'Lista e busca de clientes',
+                    'Histórico do cliente',
+                    'Cadastro de serviços',
+                    'Lista e filtro de serviços',
+                    'Notificações WhatsApp para a barbearia',
+                    'Confirmação WhatsApp para o cliente',
+                    'Alertas de solicitações pendentes',
+                    'Múltiplos usuários e profissionais',
+                    'Upload de logo e imagem de fundo',
+                    'Dados da empresa editáveis',
+                ],
+            });
+            console.log('✅ Plano Grátis (padrão) criado.');
+        } else if (defaultPlan.sortOrder == null || defaultPlan.sortOrder !== 0) {
+            // Corrige sort_order caso o plano já existia antes da coluna ser adicionada
+            await defaultPlan.update({ sortOrder: 0 });
+            console.log('✅ sort_order do plano Grátis corrigido para 0.');
+        }
+
+        // Seed: cria o usuário bootstrap se não existir; reativa se estiver desativado
+        const bcrypt = require('bcryptjs');
+        const bootstrapAdmin = await GestorAdmin.findOne({ where: { email: 'admin@barbeiroon.com' } });
+        if (!bootstrapAdmin) {
+            await GestorAdmin.create({
+                name: 'Admin Bootstrap',
+                email: 'admin@barbeiroon.com',
+                password: await bcrypt.hash('admin@123', 10),
+                isBootstrap: true,
+                mustSetup: true,
+                isActive: true,
+            });
+            console.log('✅ Usuário bootstrap do gestor criado: admin@barbeiroon.com');
+        } else if (!bootstrapAdmin.isActive) {
+            await bootstrapAdmin.update({ isActive: true });
+            console.log('✅ Usuário bootstrap do gestor reativado: admin@barbeiroon.com');
+        }
+
         await seedDefault();
         
         // Log de todas as rotas registradas
@@ -144,6 +301,7 @@ app.use((err, req, res, next) => {
         
         app.listen(PORT, '0.0.0.0', () => {
             console.log(`🚀 Servidor rodando na porta ${PORT}`);
+            ReminderService.start();
         });
     } catch (err) {
         console.error('❌ Erro ao conectar/sincronizar banco de dados:', err);
