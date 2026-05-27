@@ -34,44 +34,54 @@ class PromotionService {
         const Customer = require('../models/Customer');
         const customer = await Customer.findOne({ where: { phone: customerPhone, tenantId } });
 
+        const Appointment = require('../models/Appointment');
+
         // Montar lista de promoções com possível voucher
         const result = [];
         for (const promo of promotions) {
-            let voucher = null;
             const promoData = typeof promo.get === 'function' ? promo.get({ plain: true }) : promo;
             const promoCriteria = this.parseCriteria(promoData.criteria);
+
+            // --- Verificação de elegibilidade por critério ---
+
+            // target_customer: promoção é para um cliente específico
+            const targetEntry = promoCriteria.find(c => typeof c === 'string' && c.startsWith('target_customer:'));
+            if (targetEntry) {
+                const targetId = targetEntry.split(':')[1];
+                if (!customer || String(customer.id) !== String(targetId)) continue;
+            }
+
+            // x_compras: cliente precisa ter N atendimentos concluídos
+            if (promoCriteria.includes('x_compras') && promoData.xPurchases) {
+                const completed = await Appointment.count({
+                    where: { customerPhone, tenantId, status: 'concluido' }
+                });
+                if (completed < Number(promoData.xPurchases)) continue;
+            }
+
+            // aniversariantes: cliente precisa fazer aniversário neste mês
             const isBirthdayPromo = promoData.discountType === 'aniversariante' || promoCriteria.includes('aniversariantes');
-            // Se for promoção de aniversariante
-            if (isBirthdayPromo && customer && customer.birthDate) {
+            if (isBirthdayPromo) {
+                if (!customer || !customer.birthDate) continue;
                 const birth = new Date(customer.birthDate);
-                if (birth.getMonth() === today.getMonth()) {
-                    // Verifica se já existe voucher válido
-                    const existing = await VoucherService.getValidVoucher({
-                        customerPhone,
-                        tenantId,
-                        promotionId: promo.id
-                    });
-                    if (existing) {
-                        voucher = existing.code;
-                    } else {
-                        // Gera novo voucher
-                        const expiresAt = new Date(today);
-                        expiresAt.setDate(today.getDate() + 7); // Exemplo: voucher vale 7 dias
-                        const created = await VoucherService.generateVoucher({
-                            customerPhone,
-                            tenantId,
-                            promotionId: promo.id,
-                            expiresAt
-                        });
-                        voucher = created.code;
-                    }
+                if (birth.getMonth() !== today.getMonth()) continue;
+            }
+
+            // --- Gerar voucher para aniversariante elegível ---
+            let voucher = null;
+            if (isBirthdayPromo) {
+                const existing = await VoucherService.getValidVoucher({ customerPhone, tenantId, promotionId: promo.id });
+                if (existing) {
+                    voucher = existing.code;
+                } else {
+                    const expiresAt = new Date(today);
+                    expiresAt.setDate(today.getDate() + 7);
+                    const created = await VoucherService.generateVoucher({ customerPhone, tenantId, promotionId: promo.id, expiresAt });
+                    voucher = created.code;
                 }
             }
-            // Retorna promoção normal + campo voucher se houver
-            result.push({
-                ...this.normalizeOutput(promo),
-                voucher
-            });
+
+            result.push({ ...this.normalizeOutput(promo), voucher });
         }
         return result;
     }
