@@ -92,12 +92,14 @@ const syncBarberToProfessional = async (user, tenantId) => {
 };
 
 const saveProfileImage = async ({ profileImageBase64, profileImageContentType }) => {
+    console.log(`[saveProfileImage] hasBase64=${!!profileImageBase64}, length=${profileImageBase64 ? profileImageBase64.length : 0}`);
     if (!profileImageBase64) return null;
 
     const normalizedBase64 = String(profileImageBase64)
         .replace(/^data:image\/[a-zA-Z+.-]+;base64,/, '')
         .trim();
 
+    console.log(`[saveProfileImage] normalizedLength=${normalizedBase64.length}`);
     if (!normalizedBase64) return null;
 
     const image = await Image.create({
@@ -105,6 +107,7 @@ const saveProfileImage = async ({ profileImageBase64, profileImageContentType })
         contentType: profileImageContentType || 'image/jpeg',
     });
 
+    console.log(`[saveProfileImage] image created id=${image.id}`);
     return image.id;
 };
 
@@ -115,7 +118,11 @@ exports.getAllUsers = async (req, res) => {
         const limit = parseInt(req.query.limit) || 10;
         const tenantId = req.tenant.id;
         const result = await UserService.getAllUsers({ tenantId, page, limit });
-        res.status(200).json(result);
+        const users = (result.users || []).map(u => ({
+            ...u,
+            imageUrl: u.profileImageId ? `/api/images/image/${u.profileImageId}` : null,
+        }));
+        res.status(200).json({ ...result, users });
     } catch (error) {
         console.error('Erro ao carregar usuários:', error);
         res.status(500).json({ message: '😞 Não foi possível carregar a lista de usuários. Tente novamente em alguns instantes.' });
@@ -227,6 +234,7 @@ exports.userEdit = async (req, res) => {
         const { id } = req.params;
         const { name, email, groupId, isBarber, profileImageBase64, profileImageContentType } = req.body;
         const tenantId = req.tenant.id;
+        console.log(`[userEdit] id=${id}, tenantId=${tenantId}, hasPhoto=${!!profileImageBase64}, bodyKeys=${Object.keys(req.body).join(',')}`);
 
         if (email) {
             const existingUser = await UserService.findByEmail(email, tenantId);
