@@ -40,7 +40,7 @@ class AppointmentService {
                     attributes: ['id', 'name', 'price', 'duration']
                 },
                 {
-                    model: Professional,
+                    model: User,
                     as: 'professional',
                     required: false,
                     attributes: ['id', 'name']
@@ -74,7 +74,7 @@ class AppointmentService {
                         attributes: ['id', 'name', 'price', 'duration']
                     },
                     {
-                        model: Professional,
+                        model: User,
                         as: 'professional',
                         attributes: ['id', 'name']
                     }
@@ -120,7 +120,7 @@ class AppointmentService {
             include: [
                 { model: Customer,     as: 'customer',     attributes: ['phone', 'name', 'birthDate'] },
                 { model: Service,      as: 'service',      attributes: ['id', 'name', 'price', 'duration'] },
-                { model: Professional, as: 'professional', attributes: ['id', 'name'] },
+                { model: User,         as: 'professional', attributes: ['id', 'name'] },
             ],
         });
     }
@@ -256,7 +256,7 @@ class AppointmentService {
                     attributes: ['id', 'name', 'price', 'duration']
                 },
                 {
-                    model: Professional,
+                    model: User,
                     as: 'professional',
                     attributes: ['id', 'name']
                 }

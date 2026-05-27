@@ -24,7 +24,7 @@ const Appointment = sequelize.define('Appointment', {
         type: DataTypes.INTEGER,
         allowNull: false,
         references: {
-            model: 'professional',
+            model: 'user',
             key: 'id',
         },
         field: 'professional_id',

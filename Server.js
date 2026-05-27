@@ -195,6 +195,25 @@ app.use((err, req, res, next) => {
             { table: 'plans',       column: 'sort_order',        ddl: `ALTER TABLE plans ADD COLUMN sort_order INT NOT NULL DEFAULT 0` },
             { table: 'user',        column: 'profile_image_id',  ddl: `ALTER TABLE \`user\` ADD COLUMN \`profile_image_id\` INT NULL` },
         ];
+        // Migração: remover FK incorreta de appointment.professional_id → professional
+        try {
+            const fkRows = await sequelize.query(
+                `SELECT CONSTRAINT_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'appointment'
+                   AND COLUMN_NAME = 'professional_id' AND REFERENCED_TABLE_NAME = 'professional'`,
+                { type: sequelize.constructor.QueryTypes.SELECT }
+            );
+            for (const row of fkRows) {
+                const constraintName = row.CONSTRAINT_NAME || row.constraint_name;
+                if (constraintName) {
+                    await sequelize.query(`ALTER TABLE appointment DROP FOREIGN KEY \`${constraintName}\``);
+                    console.log(`✅ FK incorreta '${constraintName}' removida de appointment`);
+                }
+            }
+        } catch (e) {
+            console.warn('⚠️ Migração FK appointment.professional_id:', e.message);
+        }
+
         for (const { table, column, ddl } of columnsToAdd) {
             try {
                 const [rows] = await sequelize.query(

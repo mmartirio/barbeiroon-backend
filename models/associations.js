@@ -29,8 +29,8 @@ Customer.hasMany(Appointment, { foreignKey: 'customerPhone', sourceKey: 'phone',
 Appointment.belongsTo(Service, { foreignKey: 'serviceId', as: 'service' });
 Service.hasMany(Appointment, { foreignKey: 'serviceId', as: 'appointments' });
 
-Appointment.belongsTo(Professional, { foreignKey: 'professionalId', as: 'professional' });
-Professional.hasMany(Appointment, { foreignKey: 'professionalId', as: 'appointments' });
+Appointment.belongsTo(User, { foreignKey: 'professionalId', as: 'professional' });
+User.hasMany(Appointment, { foreignKey: 'professionalId', as: 'appointments' });
 
 Appointment.belongsTo(Tenant, { foreignKey: 'tenantId', as: 'tenant' });
 Tenant.hasMany(Appointment, { foreignKey: 'tenantId', as: 'appointments' });
