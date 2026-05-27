@@ -36,11 +36,14 @@ class PromotionService {
 
         const Appointment = require('../models/Appointment');
 
+        console.log(`[Promo] cliente: ${customerPhone} | birthDate: ${customer?.birthDate} | mêsAtual: ${today.getMonth() + 1} | promoções ativas: ${promotions.length}`);
+
         // Montar lista de promoções com possível voucher
         const result = [];
         for (const promo of promotions) {
             const promoData = typeof promo.get === 'function' ? promo.get({ plain: true }) : promo;
             const promoCriteria = this.parseCriteria(promoData.criteria);
+            console.log(`[Promo] avaliando: "${promoData.name}" | discountType: ${promoData.discountType} | criteria: ${JSON.stringify(promoCriteria)}`);
 
             // --- Verificação de elegibilidade por critério ---
 
@@ -62,11 +65,16 @@ class PromotionService {
             // aniversariantes: cliente precisa fazer aniversário neste mês
             const isBirthdayPromo = promoData.discountType === 'aniversariante' || promoCriteria.includes('aniversariantes');
             if (isBirthdayPromo) {
-                if (!customer || !customer.birthDate) continue;
-                // Lê o mês diretamente da string para evitar deslocamento por fuso horário
-                // new Date("YYYY-MM-DD") interpreta como UTC meia-noite; em UTC-3 vira o dia anterior
+                if (!customer || !customer.birthDate) {
+                    console.log(`[Promo] SKIP "${promoData.name}": cliente sem birthDate`);
+                    continue;
+                }
                 const birthMonth = parseInt(String(customer.birthDate).split('T')[0].split('-')[1], 10) - 1;
-                if (birthMonth !== today.getMonth()) continue;
+                console.log(`[Promo] aniversário: birthMonth=${birthMonth + 1} | todayMonth=${today.getMonth() + 1}`);
+                if (birthMonth !== today.getMonth()) {
+                    console.log(`[Promo] SKIP "${promoData.name}": mês não bate`);
+                    continue;
+                }
             }
 
             // --- Gerar voucher para aniversariante elegível ---
