@@ -40,6 +40,10 @@ router.post('/payment-methods', ctrl.createPaymentMethod);
 router.put('/payment-methods/:id', ctrl.updatePaymentMethod);
 router.delete('/payment-methods/:id', ctrl.deletePaymentMethod);
 
+// Monitoramento de empresas
+router.get('/tenants/:id/metrics', ctrl.getTenantMetrics);
+router.get('/monitor', ctrl.getMonitor);
+
 // Administradores do gestor
 router.get('/admin-users', ctrl.getAdminUsers);
 router.post('/admin-users', ctrl.createAdminUser);

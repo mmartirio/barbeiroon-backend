@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const { Op } = require('sequelize');
+const { Op, QueryTypes } = require('sequelize');
 const sequelize = require('../config/db');
 const Tenant = require('../models/Tenant');
 const Plan = require('../models/Plan');
@@ -291,6 +291,83 @@ exports.deleteTenant = async (req, res) => {
     } catch (error) {
         console.error('Erro ao excluir tenant:', error);
         res.status(500).json({ message: 'Erro ao excluir empresa.' });
+    }
+};
+
+// ─── Monitoramento ────────────────────────────────────────────────────────────
+
+const METRICS_SQL = `
+    SELECT
+        t.id,
+        t.name,
+        t.slug,
+        t.email,
+        t.is_active AS isActive,
+        t.plan_type AS planType,
+        COALESCE(u.total, 0)    AS totalUsers,
+        COALESCE(c.total, 0)    AS totalCustomers,
+        COALESCE(s.total, 0)    AS totalServices,
+        COALESCE(a.agendado, 0) AS appointmentsScheduled,
+        COALESCE(a.concluido, 0) AS appointmentsCompleted,
+        COALESCE(a.cancelado, 0) AS appointmentsCancelled,
+        COALESCE(a.pendente, 0)  AS appointmentsPending,
+        COALESCE(a.total, 0)     AS appointmentsTotal
+    FROM tenants t
+    LEFT JOIN (
+        SELECT tenant_id, COUNT(*) AS total FROM user GROUP BY tenant_id
+    ) u ON u.tenant_id = t.id
+    LEFT JOIN (
+        SELECT tenant_id, COUNT(*) AS total FROM customers GROUP BY tenant_id
+    ) c ON c.tenant_id = t.id
+    LEFT JOIN (
+        SELECT tenant_id, COUNT(*) AS total FROM service GROUP BY tenant_id
+    ) s ON s.tenant_id = t.id
+    LEFT JOIN (
+        SELECT
+            tenant_id,
+            COUNT(*) AS total,
+            SUM(status = 'agendado')  AS agendado,
+            SUM(status = 'concluido') AS concluido,
+            SUM(status = 'cancelado') AS cancelado,
+            SUM(status = 'pendente')  AS pendente
+        FROM appointment GROUP BY tenant_id
+    ) a ON a.tenant_id = t.id
+    WHERE (:search IS NULL OR t.name LIKE :searchLike OR t.email LIKE :searchLike)
+      AND (:active IS NULL OR t.is_active = :active)
+    ORDER BY t.name ASC
+`;
+
+exports.getMonitor = async (req, res) => {
+    try {
+        const { search = '', active } = req.query;
+        const rows = await sequelize.query(METRICS_SQL, {
+            replacements: {
+                search: search || null,
+                searchLike: search ? `%${search}%` : null,
+                active: active === 'true' ? 1 : active === 'false' ? 0 : null,
+            },
+            type: QueryTypes.SELECT,
+        });
+        res.json({ tenants: rows });
+    } catch (error) {
+        console.error('Erro no monitor:', error);
+        res.status(500).json({ message: 'Erro ao carregar monitoramento.' });
+    }
+};
+
+exports.getTenantMetrics = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const rows = await sequelize.query(METRICS_SQL, {
+            replacements: { search: null, searchLike: null, active: null },
+            type: QueryTypes.SELECT,
+        });
+        const tenant = rows.find(r => String(r.id) === String(id));
+        if (!tenant) return res.status(404).json({ message: 'Empresa não encontrada.' });
+        res.json(tenant);
+    } catch (error) {
+        console.error('Erro ao buscar métricas:', error);
+        res.status(500).json({ message: 'Erro ao carregar métricas.' });
     }
 };
 
