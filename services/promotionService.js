@@ -36,14 +36,11 @@ class PromotionService {
 
         const Appointment = require('../models/Appointment');
 
-        console.log(`[Promo] cliente: ${customerPhone} | birthDate: ${customer?.birthDate} | mêsAtual: ${today.getMonth() + 1} | promoções ativas: ${promotions.length}`);
-
         // Montar lista de promoções com possível voucher
         const result = [];
         for (const promo of promotions) {
             const promoData = typeof promo.get === 'function' ? promo.get({ plain: true }) : promo;
             const promoCriteria = this.parseCriteria(promoData.criteria);
-            console.log(`[Promo] avaliando: "${promoData.name}" | discountType: ${promoData.discountType} | criteria: ${JSON.stringify(promoCriteria)}`);
 
             // --- Verificação de elegibilidade por critério ---
 
