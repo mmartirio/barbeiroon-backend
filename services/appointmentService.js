@@ -247,21 +247,33 @@ class AppointmentService {
     }
 
     static async getByCustomerPhone(customerPhone, tenantId) {
-        return await Appointment.findAll({
-            where: { customerPhone, tenantId },
+        const today = new Date().toISOString().split('T')[0];
+
+        const rows = await Appointment.findAll({
+            where: {
+                customerPhone,
+                tenantId,
+                status: 'agendado',
+                appointmentDate: { [Op.gte]: today },
+            },
             include: [
-                {
-                    model: Service,
-                    as: 'service',
-                    attributes: ['id', 'name', 'price', 'duration']
-                },
-                {
-                    model: User,
-                    as: 'professional',
-                    attributes: ['id', 'name']
-                }
+                { model: Service, as: 'service', attributes: ['id', 'name', 'price', 'duration'] },
+                { model: User,    as: 'professional', attributes: ['id', 'name'] },
             ],
-            order: [['appointmentDate', 'DESC'], ['appointmentTime', 'DESC']]
+            order: [['appointmentDate', 'ASC'], ['appointmentTime', 'ASC']],
+        });
+
+        const now = new Date();
+        return rows.filter(a => {
+            const dateStr = String(a.appointmentDate instanceof Date
+                ? a.appointmentDate.toISOString()
+                : a.appointmentDate).split('T')[0];
+            const timeStr = String(a.appointmentTime || '00:00').slice(0, 5);
+            const duration = Number(a.service?.duration) || 0;
+            const [h, m] = timeStr.split(':').map(Number);
+            const start = new Date(`${dateStr}T${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:00`);
+            const cutoff = new Date(start.getTime() + (duration + 10) * 60 * 1000);
+            return cutoff >= now;
         });
     }
 
