@@ -1,0 +1,11 @@
+FROM atendai/evolution-api:v2.2.3
+
+RUN apk add --no-cache git
+
+WORKDIR /evolution
+RUN npm install baileys@6.7.16 --legacy-peer-deps --no-audit --no-fund
+
+COPY docker-entrypoint-evolution.sh /docker-entrypoint-evolution.sh
+RUN chmod +x /docker-entrypoint-evolution.sh
+
+ENTRYPOINT ["/docker-entrypoint-evolution.sh"]

@@ -1,0 +1,141 @@
+services:
+
+  # ─── MySQL ────────────────────────────────────────────────────────────────
+  mysql:
+    image: mysql:8.0
+    container_name: barbeiro-on-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - barbeiro-on-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ─── PostgreSQL (Evolution API) ───────────────────────────────────────────
+  evolution-postgres:
+    image: postgres:15-alpine
+    container_name: barbeiro-evolution-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${EVOLUTION_POSTGRES_DB}
+      POSTGRES_USER: ${EVOLUTION_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${EVOLUTION_POSTGRES_PASSWORD}
+    volumes:
+      - evolution_postgres_data:/var/lib/postgresql/data
+    networks:
+      - barbeiro-on-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${EVOLUTION_POSTGRES_USER} -d ${EVOLUTION_POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Redis (Evolution API) ────────────────────────────────────────────────
+  evolution-redis:
+    image: redis:7-alpine
+    container_name: barbeiro-evolution-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - evolution_redis_data:/data
+    networks:
+      - barbeiro-on-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Evolution API (WhatsApp Gateway) ────────────────────────────────────
+  evolution-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.evolution
+    image: barbeiro-evolution-api
+    container_name: barbeiro-evolution-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      SERVER_URL: "https://${EVOLUTION_DOMAIN}"
+      AUTHENTICATION_TYPE: "apikey"
+      AUTHENTICATION_API_KEY: "${EVOLUTION_API_KEY}"
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
+      LANGUAGE: "pt-BR"
+      LOG_LEVEL: "ERROR"
+      LOG_COLOR: "false"
+      LOG_BAILEYS: "error"
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: "postgresql"
+      DATABASE_CONNECTION_URI: "postgresql://${EVOLUTION_POSTGRES_USER}:${EVOLUTION_POSTGRES_PASSWORD}@evolution-postgres:5432/${EVOLUTION_POSTGRES_DB}?schema=public"
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "false"
+      DEL_INSTANCE: "false"
+      QRCODE_LIMIT: "30"
+      STORE_MESSAGES: "false"
+      STORE_MESSAGE_UP: "false"
+      STORE_CONTACTS: "false"
+      STORE_CHATS: "false"
+    volumes:
+      - evolution_instances:/evolution/instances
+    depends_on:
+      evolution-postgres:
+        condition: service_healthy
+      evolution-redis:
+        condition: service_healthy
+    networks:
+      - barbeiro-on-network
+
+  # ─── Backend Node.js ──────────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: barbeiro-on-backend
+    container_name: barbeiro-on-backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    env_file: .env.prod
+    environment:
+      NODE_ENV: production
+      DB_HOST: mysql
+      DB_PORT: 3306
+      WHATSAPP_PROVIDER: evolution
+      EVOLUTION_API_URL: http://evolution-api:8080
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      evolution-api:
+        condition: service_started
+    networks:
+      - barbeiro-on-network
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3001', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+
+networks:
+  barbeiro-on-network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  uploads_data:
+  evolution_instances:
+  evolution_postgres_data:
+  evolution_redis_data:
