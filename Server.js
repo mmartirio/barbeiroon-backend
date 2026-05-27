@@ -231,6 +231,39 @@ app.use((err, req, res, next) => {
             }
         }
 
+        // Migração: normalizar telefones de clientes (remove não-dígitos) e eliminar duplicatas
+        try {
+            await sequelize.query('SET FOREIGN_KEY_CHECKS=0');
+            const nonNorm = await sequelize.query(
+                `SELECT phone, tenant_id, name FROM customers WHERE phone REGEXP '[^0-9]'`,
+                { type: sequelize.constructor.QueryTypes.SELECT }
+            );
+            for (const row of nonNorm) {
+                const old = row.phone || row.PHONE;
+                const tid = row.tenant_id || row.TENANT_ID;
+                const norm = String(old).replace(/\D/g, '');
+                if (!norm) continue;
+                const [dup] = await sequelize.query(
+                    `SELECT COUNT(*) AS cnt FROM customers WHERE phone = :norm AND tenant_id = :tid`,
+                    { replacements: { norm, tid }, type: sequelize.constructor.QueryTypes.SELECT }
+                );
+                const hasDup = Number(dup?.cnt ?? dup?.CNT ?? 0) > 0;
+                await sequelize.query(`UPDATE appointment       SET customer_phone = :norm WHERE customer_phone = :old AND tenant_id = :tid`, { replacements: { norm, old, tid } });
+                await sequelize.query(`UPDATE appointment_requests SET customer_phone = :norm WHERE customer_phone = :old AND tenant_id = :tid`, { replacements: { norm, old, tid } }).catch(() => {});
+                if (hasDup) {
+                    await sequelize.query(`DELETE FROM customers WHERE phone = :old AND tenant_id = :tid`, { replacements: { old, tid } });
+                    console.log(`✅ Duplicata removida: "${old}" → "${norm}"`);
+                } else {
+                    await sequelize.query(`UPDATE customers SET phone = :norm WHERE phone = :old AND tenant_id = :tid`, { replacements: { norm, old, tid } });
+                    console.log(`✅ Telefone normalizado: "${old}" → "${norm}"`);
+                }
+            }
+            await sequelize.query('SET FOREIGN_KEY_CHECKS=1');
+        } catch (e) {
+            await sequelize.query('SET FOREIGN_KEY_CHECKS=1').catch(() => {});
+            console.warn('⚠️ Migração normalização de telefones:', e.message);
+        }
+
         // Cria tabelas do gestor se não existirem
         const Plan = require('./models/Plan');
         const PaymentMethod = require('./models/PaymentMethod');

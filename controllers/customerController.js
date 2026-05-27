@@ -56,9 +56,10 @@ exports.createCustomer = async (req, res) => {
         // Verifica se já existe cliente com este telefone
         const existingCustomer = await CustomerService.getCustomerByPhone(phone, tenantId);
         if (existingCustomer) {
-            return res.status(400).json({ 
-                message: 'Cliente já cadastrado com este telefone',
-                customer: existingCustomer 
+            return res.status(409).json({
+                message: `O telefone informado já pertence ao cliente "${existingCustomer.name}". Cada cliente deve ter um número único.`,
+                duplicate: true,
+                customer: { name: existingCustomer.name, phone: existingCustomer.phone }
             });
         }
 
