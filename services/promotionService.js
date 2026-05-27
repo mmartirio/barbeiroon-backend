@@ -63,8 +63,10 @@ class PromotionService {
             const isBirthdayPromo = promoData.discountType === 'aniversariante' || promoCriteria.includes('aniversariantes');
             if (isBirthdayPromo) {
                 if (!customer || !customer.birthDate) continue;
-                const birth = new Date(customer.birthDate);
-                if (birth.getMonth() !== today.getMonth()) continue;
+                // Lê o mês diretamente da string para evitar deslocamento por fuso horário
+                // new Date("YYYY-MM-DD") interpreta como UTC meia-noite; em UTC-3 vira o dia anterior
+                const birthMonth = parseInt(String(customer.birthDate).split('T')[0].split('-')[1], 10) - 1;
+                if (birthMonth !== today.getMonth()) continue;
             }
 
             // --- Gerar voucher para aniversariante elegível ---
