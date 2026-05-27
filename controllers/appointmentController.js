@@ -743,6 +743,28 @@ exports.approveRequest = async (req, res) => {
         }, tenantId);
 
         await request.update({ status: 'approved' });
+
+        // Notifica o cliente via WhatsApp
+        try {
+            const Customer = require('../models/Customer');
+            const [service, professional, customer] = await Promise.all([
+                Service.findByPk(request.serviceId),
+                User.findByPk(request.professionalId),
+                Customer.findOne({ where: { phone: request.customerPhone, tenantId } }),
+            ]);
+            await WhatsAppService.sendConfirmationMessage({
+                to: request.customerPhone,
+                customerName: customer?.name || null,
+                serviceName: service?.name || null,
+                professionalName: professional?.name || null,
+                appointmentDate: request.appointmentDate,
+                appointmentTime: request.appointmentTime,
+                servicePrice: service?.price || null,
+            });
+        } catch (e) {
+            console.warn('[approveRequest] falha ao enviar WhatsApp (não crítico):', e.message);
+        }
+
         res.status(200).json({ message: 'Solicitacao aprovada.' });
     } catch (error) {
         console.error('Erro ao aprovar solicitacao:', error);
