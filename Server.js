@@ -203,7 +203,6 @@ app.use((err, req, res, next) => {
                     { replacements: { table, column }, type: sequelize.constructor.QueryTypes.SELECT }
                 );
                 const cnt = rows?.cnt ?? rows?.CNT ?? 0;
-                console.log(`[migration] ${table}.${column}: cnt=${cnt}`);
                 if (cnt === 0) {
                     await sequelize.query(ddl);
                     console.log(`✅ Coluna '${column}' adicionada à tabela ${table}`);

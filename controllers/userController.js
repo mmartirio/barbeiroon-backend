@@ -92,14 +92,12 @@ const syncBarberToProfessional = async (user, tenantId) => {
 };
 
 const saveProfileImage = async ({ profileImageBase64, profileImageContentType }) => {
-    console.log(`[saveProfileImage] hasBase64=${!!profileImageBase64}, length=${profileImageBase64 ? profileImageBase64.length : 0}`);
     if (!profileImageBase64) return null;
 
     const normalizedBase64 = String(profileImageBase64)
         .replace(/^data:image\/[a-zA-Z+.-]+;base64,/, '')
         .trim();
 
-    console.log(`[saveProfileImage] normalizedLength=${normalizedBase64.length}`);
     if (!normalizedBase64) return null;
 
     const image = await Image.create({
@@ -107,7 +105,6 @@ const saveProfileImage = async ({ profileImageBase64, profileImageContentType })
         contentType: profileImageContentType || 'image/jpeg',
     });
 
-    console.log(`[saveProfileImage] image created id=${image.id}`);
     return image.id;
 };
 
@@ -234,7 +231,6 @@ exports.userEdit = async (req, res) => {
         const { id } = req.params;
         const { name, email, groupId, isBarber, profileImageBase64, profileImageContentType } = req.body;
         const tenantId = req.tenant.id;
-        console.log(`[userEdit] id=${id}, tenantId=${tenantId}, hasPhoto=${!!profileImageBase64}, bodyKeys=${Object.keys(req.body).join(',')}`);
 
         if (email) {
             const existingUser = await UserService.findByEmail(email, tenantId);
