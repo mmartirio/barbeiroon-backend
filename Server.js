@@ -187,12 +187,13 @@ app.use((err, req, res, next) => {
 
         // Migração: adiciona colunas ausentes nas tabelas
         const columnsToAdd = [
-            { table: 'appointment', column: 'status',       ddl: `ALTER TABLE appointment ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'agendado'` },
-            { table: 'appointment', column: 'promotion_id', ddl: `ALTER TABLE appointment ADD COLUMN promotion_id INT NULL` },
-            { table: 'tenants',     column: 'plan_id',      ddl: `ALTER TABLE tenants ADD COLUMN plan_id INT NULL` },
-            { table: 'plans',       column: 'is_default',   ddl: `ALTER TABLE plans ADD COLUMN is_default TINYINT(1) NOT NULL DEFAULT 0` },
-            { table: 'plans',       column: 'trial_months', ddl: `ALTER TABLE plans ADD COLUMN trial_months INT NULL` },
-            { table: 'plans',       column: 'sort_order',   ddl: `ALTER TABLE plans ADD COLUMN sort_order INT NOT NULL DEFAULT 0` },
+            { table: 'appointment', column: 'status',            ddl: `ALTER TABLE appointment ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'agendado'` },
+            { table: 'appointment', column: 'promotion_id',      ddl: `ALTER TABLE appointment ADD COLUMN promotion_id INT NULL` },
+            { table: 'tenants',     column: 'plan_id',           ddl: `ALTER TABLE tenants ADD COLUMN plan_id INT NULL` },
+            { table: 'plans',       column: 'is_default',        ddl: `ALTER TABLE plans ADD COLUMN is_default TINYINT(1) NOT NULL DEFAULT 0` },
+            { table: 'plans',       column: 'trial_months',      ddl: `ALTER TABLE plans ADD COLUMN trial_months INT NULL` },
+            { table: 'plans',       column: 'sort_order',        ddl: `ALTER TABLE plans ADD COLUMN sort_order INT NOT NULL DEFAULT 0` },
+            { table: 'user',        column: 'profile_image_id',  ddl: `ALTER TABLE user ADD COLUMN profile_image_id INT NULL` },
         ];
         for (const { table, column, ddl } of columnsToAdd) {
             try {
