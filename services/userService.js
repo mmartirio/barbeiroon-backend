@@ -8,7 +8,7 @@ class UserService {
             const offset = (page - 1) * limit;
             const { rows, count } = await User.findAndCountAll({
                 where: { tenantId },
-                attributes: ['id', 'name', 'email', 'groupId', 'tenantId', 'isActive', 'isBarber', 'createdAt', 'updatedAt'],
+                attributes: ['id', 'name', 'email', 'groupId', 'tenantId', 'isActive', 'isBarber', 'profileImageId', 'createdAt', 'updatedAt'],
                 include: [{
                     model: Group,
                     as: 'group',

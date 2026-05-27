@@ -193,7 +193,7 @@ app.use((err, req, res, next) => {
             { table: 'plans',       column: 'is_default',        ddl: `ALTER TABLE plans ADD COLUMN is_default TINYINT(1) NOT NULL DEFAULT 0` },
             { table: 'plans',       column: 'trial_months',      ddl: `ALTER TABLE plans ADD COLUMN trial_months INT NULL` },
             { table: 'plans',       column: 'sort_order',        ddl: `ALTER TABLE plans ADD COLUMN sort_order INT NOT NULL DEFAULT 0` },
-            { table: 'user',        column: 'profile_image_id',  ddl: `ALTER TABLE user ADD COLUMN profile_image_id INT NULL` },
+            { table: 'user',        column: 'profile_image_id',  ddl: `ALTER TABLE \`user\` ADD COLUMN \`profile_image_id\` INT NULL` },
         ];
         for (const { table, column, ddl } of columnsToAdd) {
             try {
@@ -202,7 +202,9 @@ app.use((err, req, res, next) => {
                      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table AND COLUMN_NAME = :column`,
                     { replacements: { table, column }, type: sequelize.constructor.QueryTypes.SELECT }
                 );
-                if ((rows?.cnt ?? rows?.CNT ?? 0) === 0) {
+                const cnt = rows?.cnt ?? rows?.CNT ?? 0;
+                console.log(`[migration] ${table}.${column}: cnt=${cnt}`);
+                if (cnt === 0) {
                     await sequelize.query(ddl);
                     console.log(`✅ Coluna '${column}' adicionada à tabela ${table}`);
                 }
