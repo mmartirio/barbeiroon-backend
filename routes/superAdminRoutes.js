@@ -34,12 +34,6 @@ router.post('/plans', ctrl.createPlan);
 router.put('/plans/:id', ctrl.updatePlan);
 router.delete('/plans/:id', ctrl.deletePlan);
 
-// Métodos de pagamento
-router.get('/payment-methods', ctrl.getPaymentMethods);
-router.post('/payment-methods', ctrl.createPaymentMethod);
-router.put('/payment-methods/:id', ctrl.updatePaymentMethod);
-router.delete('/payment-methods/:id', ctrl.deletePaymentMethod);
-
 // Monitoramento de empresas
 router.get('/tenants/:id/metrics', ctrl.getTenantMetrics);
 router.get('/monitor', ctrl.getMonitor);
@@ -49,5 +43,15 @@ router.get('/admin-users', ctrl.getAdminUsers);
 router.post('/admin-users', ctrl.createAdminUser);
 router.put('/admin-users/:id', ctrl.updateAdminUser);
 router.delete('/admin-users/:id', ctrl.deleteAdminUser);
+
+// Configuração PIX
+router.get('/pix/config',  ctrl.pixGetConfig);
+router.put('/pix/config',  ctrl.pixSaveConfig);
+
+// Cobranças PIX
+router.get('/pix/invoices',             ctrl.pixListInvoices);
+router.post('/pix/invoices',            ctrl.pixCreateInvoice);
+router.put('/pix/invoices/:id/paid',    ctrl.pixMarkPaid);
+router.delete('/pix/invoices/:id',      ctrl.pixCancelInvoice);
 
 module.exports = router;

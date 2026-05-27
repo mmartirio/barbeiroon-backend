@@ -268,9 +268,11 @@ app.use((err, req, res, next) => {
         const Plan = require('./models/Plan');
         const PaymentMethod = require('./models/PaymentMethod');
         const GestorAdmin = require('./models/GestorAdmin');
+        const CoraInvoice = require('./models/CoraInvoice');
         await Plan.sync({ alter: false });
         await PaymentMethod.sync({ alter: false });
         await GestorAdmin.sync({ alter: false });
+        await CoraInvoice.sync({ alter: false });
 
         // Seed: cria ou corrige o plano Grátis padrão
         const defaultPlan = await Plan.findOne({ where: { isDefault: true } });

@@ -6,6 +6,9 @@ const Tenant = require('../models/Tenant');
 const Plan = require('../models/Plan');
 const PaymentMethod = require('../models/PaymentMethod');
 const GestorAdmin = require('../models/GestorAdmin');
+const PixConfig  = require('../models/PixConfig');
+const PixInvoice = require('../models/PixInvoice');
+const { generatePixEMV } = require('../utils/pixGenerator');
 
 const SECRET = process.env.JWT_SECRET || 'meu-barbeiro-secret';
 
@@ -491,5 +494,141 @@ exports.deletePaymentMethod = async (req, res) => {
         res.json({ message: 'Método de pagamento excluído com sucesso.' });
     } catch (error) {
         res.status(500).json({ message: 'Erro ao excluir método de pagamento.' });
+    }
+};
+
+// ─── PIX Config ───────────────────────────────────────────────────────────────
+
+exports.pixGetConfig = async (req, res) => {
+    try {
+        const cfg = await PixConfig.findOne({ order: [['id', 'DESC']] });
+        res.json(cfg || null);
+    } catch (error) {
+        res.status(500).json({ message: 'Erro ao buscar configuração PIX.' });
+    }
+};
+
+exports.pixSaveConfig = async (req, res) => {
+    try {
+        const { keyType, keyValue, ownerName, city, bankName } = req.body;
+        if (!keyType || !keyValue || !ownerName || !city) {
+            return res.status(400).json({ message: 'Tipo de chave, chave PIX, nome e cidade são obrigatórios.' });
+        }
+        if (ownerName.length > 25) {
+            return res.status(400).json({ message: 'Nome do titular deve ter no máximo 25 caracteres.' });
+        }
+        if (city.length > 15) {
+            return res.status(400).json({ message: 'Cidade deve ter no máximo 15 caracteres.' });
+        }
+        let cfg = await PixConfig.findOne({ order: [['id', 'DESC']] });
+        if (cfg) {
+            await cfg.update({ keyType, keyValue, ownerName, city, bankName: bankName || null });
+        } else {
+            cfg = await PixConfig.create({ keyType, keyValue, ownerName, city, bankName: bankName || null });
+        }
+        res.json(cfg);
+    } catch (error) {
+        console.error('[pix] saveConfig:', error.message);
+        res.status(500).json({ message: 'Erro ao salvar configuração PIX.' });
+    }
+};
+
+// ─── PIX Invoices ─────────────────────────────────────────────────────────────
+
+exports.pixListInvoices = async (req, res) => {
+    try {
+        const { tenantId, status, page = 1, limit = 30 } = req.query;
+        const where = {};
+        if (tenantId) where.tenantId = Number(tenantId);
+        if (status)   where.status   = status;
+
+        const { rows, count } = await PixInvoice.findAndCountAll({
+            where,
+            include: [{ model: Tenant, as: 'tenant', required: false, attributes: ['id', 'name', 'email'] }],
+            order: [['createdAt', 'DESC']],
+            limit:  Number(limit),
+            offset: (Number(page) - 1) * Number(limit),
+        });
+        res.json({ invoices: rows, total: count, page: Number(page), limit: Number(limit) });
+    } catch (error) {
+        console.error('[pix] listInvoices:', error.message);
+        res.status(500).json({ message: 'Erro ao listar cobranças.' });
+    }
+};
+
+exports.pixCreateInvoice = async (req, res) => {
+    try {
+        const { tenantId, planType, amountCents, dueDate, description, customerName, notes } = req.body;
+
+        if (!amountCents || Number(amountCents) < 100) {
+            return res.status(400).json({ message: 'Valor mínimo é R$ 1,00.' });
+        }
+        if (!dueDate) {
+            return res.status(400).json({ message: 'Data de vencimento é obrigatória.' });
+        }
+
+        const cfg = await PixConfig.findOne({ order: [['id', 'DESC']] });
+        if (!cfg) {
+            return res.status(400).json({ message: 'Configure a chave PIX antes de emitir cobranças.' });
+        }
+
+        let resolvedName = customerName || null;
+        if (!resolvedName && tenantId) {
+            const tenant = await Tenant.findByPk(tenantId, { attributes: ['name', 'ownerName', 'companyName'] });
+            if (tenant) resolvedName = tenant.ownerName || tenant.companyName || tenant.name;
+        }
+
+        const txid   = `INV${Date.now()}`.substring(0, 25);
+        const pixEmv = generatePixEMV({
+            pixKey:       cfg.keyValue,
+            amountCents:  Number(amountCents),
+            merchantName: cfg.ownerName,
+            merchantCity: cfg.city,
+            txid,
+            description:  description || '',
+        });
+
+        const invoice = await PixInvoice.create({
+            tenantId:     tenantId || null,
+            planType:     planType || 'monthly',
+            status:       'PENDING',
+            amountCents:  Number(amountCents),
+            dueDate,
+            description:  description || null,
+            customerName: resolvedName,
+            pixEmv,
+            notes:        notes || null,
+        });
+
+        const result = await PixInvoice.findByPk(invoice.id, {
+            include: [{ model: Tenant, as: 'tenant', required: false, attributes: ['id', 'name', 'email'] }],
+        });
+        res.status(201).json(result);
+    } catch (error) {
+        console.error('[pix] createInvoice:', error.message);
+        res.status(500).json({ message: 'Erro ao criar cobrança.' });
+    }
+};
+
+exports.pixMarkPaid = async (req, res) => {
+    try {
+        const invoice = await PixInvoice.findByPk(req.params.id);
+        if (!invoice) return res.status(404).json({ message: 'Cobrança não encontrada.' });
+        await invoice.update({ status: 'PAID', paidAt: new Date() });
+        res.json(invoice);
+    } catch (error) {
+        res.status(500).json({ message: 'Erro ao marcar como paga.' });
+    }
+};
+
+exports.pixCancelInvoice = async (req, res) => {
+    try {
+        const invoice = await PixInvoice.findByPk(req.params.id);
+        if (!invoice) return res.status(404).json({ message: 'Cobrança não encontrada.' });
+        if (invoice.status === 'PAID') return res.status(400).json({ message: 'Não é possível cancelar uma cobrança já paga.' });
+        await invoice.update({ status: 'CANCELLED' });
+        res.json(invoice);
+    } catch (error) {
+        res.status(500).json({ message: 'Erro ao cancelar cobrança.' });
     }
 };
