@@ -115,7 +115,13 @@ Tenant.init({
         type: DataTypes.ENUM('free', 'basic', 'premium', 'enterprise'),
         defaultValue: 'free',
         field: 'plan_type',
-        comment: 'Tipo de plano contratado'
+        comment: 'Categoria do plano (fallback quando planId não está definido)'
+    },
+    planId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        field: 'plan_id',
+        comment: 'FK para o plano contratado no gestor'
     }
 }, {
     sequelize,

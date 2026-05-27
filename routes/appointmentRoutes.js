@@ -3,6 +3,8 @@ const router = express.Router();
 const appointmentController = require('../controllers/appointmentController');
 const { checkPermission } = require('../middlewares/checkPermission');
 
+router.get('/pending-promotions', appointmentController.checkPendingPromotions);
+router.get('/promotion-check', appointmentController.checkPromotionUsage);
 router.get('/', checkPermission('canViewAppointments'), appointmentController.getAll);
 router.get('/all-grouped', checkPermission('canViewAppointments'), appointmentController.getAllGroupedByDate);
 router.get('/own', appointmentController.getOwn);

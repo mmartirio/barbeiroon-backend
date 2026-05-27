@@ -1,12 +1,98 @@
+const formatDate = (dateStr) => {
+    if (!dateStr) return '-';
+    const parts = String(dateStr).split('-');
+    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    return dateStr;
+};
+
 class WhatsAppService {
     static normalizePhone(phone) {
         if (!phone) return null;
         const digits = String(phone).replace(/\D/g, '');
         if (!digits) return null;
-        if (digits.startsWith('55')) return digits;
-        return `55${digits}`;
+        return digits.startsWith('55') ? digits : `55${digits}`;
     }
 
+    // Roteador principal — escolhe o provedor pelo env WHATSAPP_PROVIDER
+    static async _send(to, message) {
+        const provider = String(process.env.WHATSAPP_PROVIDER || 'evolution').toLowerCase();
+        switch (provider) {
+            case 'evolution':  return this.sendViaEvolution(to, message);
+            case 'meta':       return this.sendViaMeta(to, message);
+            case 'callmebot':  return this.sendViaCallMeBot(to, message);
+            default:           return { success: false, skipped: true, reason: 'unknown-provider' };
+        }
+    }
+
+    // ─── Mensagens de negócio ─────────────────────────────────────────────────
+
+    static async sendConfirmationMessage({ to, customerName, serviceName, professionalName, appointmentDate, appointmentTime, servicePrice }) {
+        const phone = this.normalizePhone(to);
+        if (!phone) return { success: false, skipped: true, reason: 'no-phone' };
+
+        const priceFormatted = servicePrice != null
+            ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(servicePrice))
+            : null;
+
+        const message = [
+            '✅ *Agendamento Confirmado!*',
+            '',
+            `Olá, ${customerName || 'cliente'}! Seu agendamento foi confirmado.`,
+            '',
+            `📅 Data: ${formatDate(appointmentDate)}`,
+            `⏰ Horário: ${appointmentTime || '-'}`,
+            `✂️ Serviço: ${serviceName || '-'}`,
+            ...(priceFormatted ? [`💰 Valor: ${priceFormatted}`] : []),
+            `👨 Profissional: ${professionalName || '-'}`,
+            '',
+            'Em caso de dúvidas, entre em contato conosco.',
+        ].join('\n');
+
+        return this._send(phone, message);
+    }
+
+    static async sendReminderMessage({ to, customerName, serviceName, professionalName, appointmentDate, appointmentTime }) {
+        const phone = this.normalizePhone(to);
+        if (!phone) return { success: false, skipped: true, reason: 'no-phone' };
+
+        const message = [
+            '⏰ *Lembrete de Agendamento*',
+            '',
+            `Olá, ${customerName || 'cliente'}! Você tem um agendamento amanhã.`,
+            '',
+            `📅 Data: ${formatDate(appointmentDate)}`,
+            `⏰ Horário: ${appointmentTime || '-'}`,
+            `✂️ Serviço: ${serviceName || '-'}`,
+            `👨 Profissional: ${professionalName || '-'}`,
+            '',
+            'Até logo! 😊',
+        ].join('\n');
+
+        return this._send(phone, message);
+    }
+
+    static async sendCancellationMessage({ to, customerName, appointmentDate, appointmentTime, reason }) {
+        const phone = this.normalizePhone(to);
+        if (!phone) return { success: false, skipped: true, reason: 'no-phone' };
+
+        const lines = [
+            '❌ *Agendamento Cancelado*',
+            '',
+            `Olá, ${customerName || 'cliente'}. Seu agendamento foi cancelado.`,
+            '',
+            `📅 Data: ${formatDate(appointmentDate)}`,
+            `⏰ Horário: ${appointmentTime || '-'}`,
+        ];
+        if (reason) {
+            lines.push('', `📋 Motivo: ${reason}`);
+        }
+        lines.push('', 'Entre em contato para reagendar.');
+        const message = lines.join('\n');
+
+        return this._send(phone, message);
+    }
+
+    // Mantida para compatibilidade — envia resumo do atendimento ao tenant
     static async sendCompletionMessage({ to, barberName, customerName, customerPhone, serviceName, appointmentDate, appointmentTime }) {
         const normalizedTo = this.normalizePhone(to);
         const message = this.buildCompletionText({ barberName, customerName, customerPhone, serviceName, appointmentDate, appointmentTime });
@@ -16,30 +102,38 @@ class WhatsAppService {
             return { success: false, skipped: true, reason: 'no-recipient-phone', redirectUrl: null };
         }
 
-        const provider = String(process.env.WHATSAPP_PROVIDER || 'callmebot').toLowerCase();
+        const result = await this._send(normalizedTo, message);
+        return { ...result, redirectUrl };
+    }
 
-        if (provider === 'meta') {
-            const metaResult = await this.sendViaMeta(normalizedTo, message);
-            return { ...metaResult, redirectUrl };
+    // ─── Provedores ───────────────────────────────────────────────────────────
+
+    static async sendViaEvolution(to, message) {
+        const baseUrl = process.env.EVOLUTION_API_URL;
+        const apiKey  = process.env.EVOLUTION_API_KEY;
+        const instance = process.env.EVOLUTION_INSTANCE || 'meu-barbeiro';
+
+        if (!baseUrl || !apiKey) {
+            return { success: false, skipped: true, reason: 'missing-evolution-config' };
         }
 
-        const callMeBotResult = await this.sendViaCallMeBot(normalizedTo, message);
-        return { ...callMeBotResult, redirectUrl };
-    }
+        try {
+            const response = await fetch(`${baseUrl}/message/sendText/${instance}`, {
+                method: 'POST',
+                headers: { apikey: apiKey, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ number: to, text: message }),
+            });
 
-    static buildCompletionText({ barberName, customerName, customerPhone, serviceName, appointmentDate, appointmentTime }) {
-        return [
-            'Atendimento concluido',
-            `Barbeiro: ${barberName || '-'}`,
-            `Cliente: ${customerName || '-'} (${customerPhone || '-'})`,
-            `Servico: ${serviceName || '-'}`,
-            `Data: ${appointmentDate || '-'} ${appointmentTime || '-'}`
-        ].join('\n');
-    }
+            const payload = await response.json().catch(() => ({}));
 
-    static buildRedirectUrl(to, message) {
-        if (!to || !message) return null;
-        return `https://wa.me/${encodeURIComponent(to)}?text=${encodeURIComponent(message)}`;
+            if (!response.ok) {
+                return { success: false, provider: 'evolution', status: response.status, payload };
+            }
+
+            return { success: true, provider: 'evolution' };
+        } catch (err) {
+            return { success: false, provider: 'evolution', error: err.message };
+        }
     }
 
     static async sendViaCallMeBot(to, message) {
@@ -69,16 +163,13 @@ class WhatsAppService {
 
         const response = await fetch(`https://graph.facebook.com/v20.0/${phoneNumberId}/messages`, {
             method: 'POST',
-            headers: {
-                Authorization: `Bearer ${token}`,
-                'Content-Type': 'application/json'
-            },
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 messaging_product: 'whatsapp',
                 to,
                 type: 'text',
-                text: { body: message }
-            })
+                text: { body: message },
+            }),
         });
 
         const payload = await response.json().catch(() => ({}));
@@ -88,6 +179,23 @@ class WhatsAppService {
         }
 
         return { success: true, provider: 'meta', payload };
+    }
+
+    // ─── Helpers ──────────────────────────────────────────────────────────────
+
+    static buildCompletionText({ barberName, customerName, customerPhone, serviceName, appointmentDate, appointmentTime }) {
+        return [
+            'Atendimento concluido',
+            `Barbeiro: ${barberName || '-'}`,
+            `Cliente: ${customerName || '-'} (${customerPhone || '-'})`,
+            `Servico: ${serviceName || '-'}`,
+            `Data: ${appointmentDate || '-'} ${appointmentTime || '-'}`,
+        ].join('\n');
+    }
+
+    static buildRedirectUrl(to, message) {
+        if (!to || !message) return null;
+        return `https://wa.me/${encodeURIComponent(to)}?text=${encodeURIComponent(message)}`;
     }
 }
 

@@ -20,16 +20,20 @@ class CustomerService {
         };
     }
 
-    // Buscar cliente por telefone
+    // Buscar cliente por telefone (normaliza para apenas dígitos)
     async getCustomerByPhone(phone, tenantId) {
+        const normalized = String(phone || '').replace(/\D/g, '');
         return await Customer.findOne({
-            where: { phone, tenantId },
+            where: { phone: normalized, tenantId },
         });
     }
 
-    // Criar novo cliente
+    // Criar novo cliente (normaliza telefone para apenas dígitos)
     async createCustomer(data) {
-        return await Customer.create(data);
+        return await Customer.create({
+            ...data,
+            phone: String(data.phone || '').replace(/\D/g, ''),
+        });
     }
 
     // Atualizar cliente

@@ -29,6 +29,11 @@ const Appointment = sequelize.define('Appointment', {
         },
         field: 'professional_id',
     },
+    promotionId: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        field: 'promotion_id',
+    },
     appointmentDate: {
         type: DataTypes.DATEONLY,
         allowNull: false,

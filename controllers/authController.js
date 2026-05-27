@@ -6,10 +6,13 @@ const Tenant = require('../models/Tenant');
 
 // Controlador de Login Multi-Tenant para usuários internos
 exports.login = async (req, res) => {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
+    if (!email || !password) {
+        return res.status(400).json({ message: 'Email e senha são obrigatórios.' });
+    }
     try {
         // Busca o usuário pelo e-mail com o grupo associado
-        const user = await User.findOne({ 
+        const user = await User.findOne({
             where: { email }, 
             attributes: ['id', 'name', 'email', 'password', 'groupId', 'tenantId', 'isActive'],
             include: [{
@@ -26,7 +29,7 @@ exports.login = async (req, res) => {
         });
 
         if (!user) {
-            return res.status(404).json({ message: '🔍 Email não encontrado. Verifique se digitou corretamente ou entre em contato com o administrador.' });
+            return res.status(401).json({ message: 'Credenciais inválidas.' });
         }
 
         // Verifica se o usuário está ativo

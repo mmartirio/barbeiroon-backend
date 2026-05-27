@@ -2,11 +2,32 @@
 const express = require('express');
 const router = express.Router();
 
-// CORREÇÃO: Importar o AppointmentService corretamente
-const AppointmentService = require('../services/AppointmentService'); // Note o 'A' maiúsculo
-// OU se o arquivo estiver com letra minúscula:
-// const AppointmentService = require('../services/appointmentService');
+// CORREÇÃO: Importar o AppointmentService corretamente (verificar o nome do arquivo)
+let AppointmentService;
+try {
+    // Tenta importar com A maiúsculo
+    AppointmentService = require('../services/AppointmentService');
+} catch (err1) {
+    try {
+        // Tenta importar com a minúsculo
+        AppointmentService = require('../services/appointmentService');
+    } catch (err2) {
+        console.error('❌ Erro ao importar AppointmentService:', err2.message);
+        AppointmentService = null;
+    }
+}
 
+// Importar PromotionService (se existir)
+let PromotionService;
+try {
+    PromotionService = require('../services/promotionService');
+} catch (err) {
+    console.warn('⚠️ PromotionService não encontrado, vouchers podem não funcionar');
+    PromotionService = null;
+}
+
+// Importar Customer
+const Customer = require('../models/Customer');
 const CustomerService = require('../services/customerService');
 const User = require('../models/User');
 const Appointment = require('../models/Appointment');
@@ -28,8 +49,36 @@ const APPOINTMENT_STATUS = Object.freeze({
 });
 
 // Verificar se o AppointmentService foi carregado
-console.log('🔍 AppointmentService carregado:', typeof AppointmentService);
-console.log('📋 Métodos disponíveis:', Object.keys(AppointmentService || {}));
+console.log('🔍 AppointmentService carregado:', !!AppointmentService);
+if (AppointmentService) {
+    console.log('📋 Métodos disponíveis:', Object.keys(AppointmentService));
+}
+
+// Função auxiliar para buscar voucher disponível para o cliente
+async function getAvailableVoucherForCustomer(customerPhone, tenantId) {
+    if (!PromotionService) return null;
+    
+    try {
+        const promotions = await PromotionService.getAvailablePromotions({ 
+            customerPhone, 
+            tenantId 
+        });
+        
+        for (const promo of promotions) {
+            if (promo.voucher) {
+                return {
+                    voucher: promo.voucher,
+                    promotion: promo,
+                    promotionId: promo.id
+                };
+            }
+        }
+        return null;
+    } catch (error) {
+        console.error('Erro ao buscar voucher:', error);
+        return null;
+    }
+}
 
 const parseTimeToMinutes = (value) => {
     if (!value) return null;
@@ -225,14 +274,38 @@ const getAvailableTimes = async ({ professionalId, date, tenantId, serviceId }) 
  */
 router.post('/create', async (req, res) => {
     try {
+        console.log('📥 POST /create recebido:', req.body);
+        
         let { customerPhone, serviceId, professionalId, date, tenantId } = req.body;
 
-        if (!customerPhone || !serviceId || !professionalId || !date || !tenantId) {
+        // Validação de campos obrigatórios
+        const missingFields = [];
+        if (!customerPhone) missingFields.push('customerPhone');
+        if (!serviceId) missingFields.push('serviceId');
+        if (!professionalId) missingFields.push('professionalId');
+        if (!date) missingFields.push('date');
+        if (!tenantId) missingFields.push('tenantId');
+        
+        if (missingFields.length > 0) {
             return res.status(400).json({ 
-                message: 'Dados incompletos. Campos obrigatórios: customerPhone, serviceId, professionalId, date, tenantId' 
+                message: `Campos obrigatórios faltando: ${missingFields.join(', ')}`,
+                missing: missingFields
             });
         }
 
+        // Verificar se o AppointmentService está disponível
+        if (!AppointmentService) {
+            console.error('❌ AppointmentService não disponível');
+            return res.status(500).json({ message: 'Serviço de agendamento não disponível' });
+        }
+
+        // Verificar se o método create existe
+        if (typeof AppointmentService.create !== 'function') {
+            console.error('❌ AppointmentService.create não é uma função');
+            return res.status(500).json({ message: 'Método de criação não disponível' });
+        }
+
+        // Buscar cliente
         const customer = await CustomerService.getCustomerByPhone(customerPhone, tenantId);
         if (!customer) {
             return res.status(404).json({ 
@@ -240,10 +313,12 @@ router.post('/create', async (req, res) => {
             });
         }
 
+        // Converter professionalId se necessário
         if (typeof professionalId === 'string' && professionalId.startsWith('user-')) {
             professionalId = parseInt(professionalId.replace('user-', ''), 10);
         }
 
+        // Extrair data e hora
         const selectedDate = String(date).split('T')[0];
         const selectedTime = String(date).split('T')[1]?.slice(0, 5);
 
@@ -251,6 +326,7 @@ router.post('/create', async (req, res) => {
             return res.status(400).json({ message: 'Horario invalido.' });
         }
 
+        // Verificar disponibilidade
         const availability = await getAvailableTimes({
             professionalId,
             date: selectedDate,
@@ -266,8 +342,9 @@ router.post('/create', async (req, res) => {
             return res.status(400).json({ message: 'Horario indisponivel.' });
         }
 
+        // Caso especial: horário que excede expediente
         if (overflowTimes.includes(selectedTime)) {
-            const expiresAt = new Date(Date.now() + 2 * 60 * 1000);
+            const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
             const request = await AppointmentRequest.create({
                 tenantId,
                 customerPhone,
@@ -288,13 +365,16 @@ router.post('/create', async (req, res) => {
             });
         }
 
-        // Usar o AppointmentService para criar
+        // Criar agendamento
+        console.log('📝 Criando agendamento...');
         const appointment = await AppointmentService.create({
             customerPhone,
             serviceId,
             professionalId,
             date
         }, tenantId);
+        
+        console.log('✅ Agendamento criado, ID:', appointment?.id);
 
         // Buscar o agendamento completo
         const createdAppointment = await Appointment.findOne({
@@ -322,19 +402,36 @@ router.post('/create', async (req, res) => {
             ? createdAppointment.get({ plain: true })
             : createdAppointment;
 
-        let barber = null;
-        if (createdPlain?.professionalId) {
-            barber = await User.findOne({
-                where: { id: createdPlain.professionalId, tenantId },
-                attributes: ['id', 'name']
-            });
+        // Buscar voucher (se PromotionService estiver disponível)
+        let voucherData = null;
+        if (PromotionService) {
+            try {
+                voucherData = await getAvailableVoucherForCustomer(customerPhone, tenantId);
+                console.log('Voucher encontrado:', voucherData);
+            } catch (voucherError) {
+                console.error('Erro ao buscar voucher:', voucherError);
+            }
         }
 
-        const tenant = await Tenant.findByPk(tenantId, { attributes: ['id', 'phone'] });
+        // Resposta de sucesso
+        res.status(201).json({ 
+            message: 'Agendamento criado com sucesso!',
+            appointment: createdPlain,
+            voucher: voucherData?.voucher || null,
+            promotionId: voucherData?.promotionId || null
+        });
 
-        // Tenta enviar notificação
+        // Notificação WhatsApp (em segundo plano, não afeta resposta)
         try {
-            const notifyResult = await WhatsAppService.sendCompletionMessage({
+            let barber = null;
+            if (createdPlain?.professionalId) {
+                barber = await User.findOne({
+                    where: { id: createdPlain.professionalId, tenantId },
+                    attributes: ['id', 'name']
+                });
+            }
+            const tenant = await Tenant.findByPk(tenantId, { attributes: ['id', 'phone'] });
+            await WhatsAppService.sendCompletionMessage({
                 to: tenant?.phone || null,
                 barberName: barber?.name || `Profissional ${createdPlain?.professionalId || '-'}`,
                 customerName: createdPlain?.customer?.name || customer?.name,
@@ -343,21 +440,17 @@ router.post('/create', async (req, res) => {
                 appointmentDate: createdPlain?.appointmentDate,
                 appointmentTime: String(createdPlain?.appointmentTime || '').slice(0, 5)
             });
-
-            if (!notifyResult?.success && !notifyResult?.skipped) {
-                console.error('Falha na notificacao WhatsApp:', notifyResult);
-            }
         } catch (notifyError) {
             console.error('Erro ao enviar notificação WhatsApp:', notifyError);
         }
-
-        res.status(201).json({ 
-            message: 'Agendamento criado com sucesso!',
-            appointment: createdPlain 
-        });
+        
     } catch (error) {
-        console.error('Erro ao criar agendamento público:', error);
-        res.status(500).json({ message: 'Erro ao criar agendamento: ' + error.message });
+        console.error('❌ Erro ao criar agendamento:', error);
+        console.error('Stack:', error.stack);
+        res.status(500).json({ 
+            message: 'Erro ao criar agendamento: ' + error.message,
+            error: error.message
+        });
     }
 });
 
@@ -366,93 +459,26 @@ router.get('/by-customer', async (req, res) => {
     try {
         const { customerPhone, tenantId } = req.query;
 
+        console.log('📥 GET /by-customer:', { customerPhone, tenantId });
+
         if (!customerPhone || !tenantId) {
             return res.status(400).json({ message: 'Parâmetros obrigatórios: customerPhone, tenantId' });
         }
 
-        const appointments = await AppointmentService.getByCustomerPhone(customerPhone, tenantId);
-
-        const userIds = appointments
-            .filter(a => a && a.professionalId)
-            .map(a => a.professionalId);
-
-        const users = await User.findAll({
-            where: { id: userIds, tenantId },
-            attributes: ['id', 'name']
-        });
-
-        const userMap = new Map(users.map(u => [String(u.id), u.name]));
-
-        const activeAppointments = appointments.map(a => {
-            const plain = typeof a.get === 'function' ? a.get({ plain: true }) : a;
-            const professionalName = plain.professional?.name || userMap.get(String(plain.professionalId)) || null;
-            return {
-                ...plain,
-                professionalName,
-                status: plain.status || APPOINTMENT_STATUS.AGENDADO
-            };
-        });
-
-        let completedAppointments = [];
-        try {
-            const completedRaw = await sequelize.query(
-                `
-                    SELECT
-                        ca.id,
-                        ca.appointment_id AS appointmentId,
-                        ca.customer_phone AS customerPhone,
-                        ca.professional_id AS professionalId,
-                        ca.service_id AS serviceId,
-                        ca.appointment_date AS appointmentDate,
-                        ca.appointment_time AS appointmentTime,
-                        ca.completed_at AS completedAt,
-                        s.name AS serviceName,
-                        u.name AS professionalName
-                    FROM completed_appointments ca
-                    LEFT JOIN service s ON s.id = ca.service_id
-                    LEFT JOIN user u ON u.id = ca.professional_id
-                    WHERE ca.tenant_id = :tenantId
-                      AND ca.customer_phone = :customerPhone
-                    ORDER BY ca.completed_at DESC
-                `,
-                {
-                    replacements: { tenantId, customerPhone },
-                    type: QueryTypes.SELECT
-                }
-            );
-
-            completedAppointments = completedRaw.map((item) => ({
-                id: item.appointmentId || `completed-${item.id}`,
-                customerPhone: item.customerPhone,
-                professionalId: item.professionalId,
-                professionalName: item.professionalName || null,
-                serviceId: item.serviceId,
-                service: item.serviceName ? { name: item.serviceName } : null,
-                appointmentDate: item.appointmentDate,
-                appointmentTime: item.appointmentTime,
-                completedAt: item.completedAt,
-                status: APPOINTMENT_STATUS.CONCLUIDO
-            }));
-        } catch (error) {
-            if (!(error && error.original && error.original.code === 'ER_NO_SUCH_TABLE')) {
-                console.error('Erro ao buscar agendamentos concluídos:', error);
-            }
+        if (!AppointmentService) {
+            return res.status(500).json({ message: 'Serviço de agendamento não disponível' });
         }
 
-        const existingIds = new Set(activeAppointments.map((item) => String(item.id)));
-        const completedOnly = completedAppointments.filter((item) => !existingIds.has(String(item.id)));
+        const appointments = await AppointmentService.getByCustomerPhone(customerPhone, tenantId);
 
-        const result = [...activeAppointments, ...completedOnly]
-            .sort((a, b) => {
-                const aDateTime = `${a.appointmentDate || ''} ${String(a.appointmentTime || '').slice(0, 5)}`;
-                const bDateTime = `${b.appointmentDate || ''} ${String(b.appointmentTime || '').slice(0, 5)}`;
-                return bDateTime.localeCompare(aDateTime);
-            });
-
-        res.status(200).json({ appointments: result });
+        res.status(200).json({ appointments: appointments || [] });
+        
     } catch (error) {
-        console.error('Erro ao listar agendamentos públicos:', error);
-        res.status(500).json({ message: 'Erro ao listar agendamentos: ' + error.message });
+        console.error('❌ Erro ao listar agendamentos:', error);
+        res.status(500).json({ 
+            message: 'Erro ao listar agendamentos: ' + error.message,
+            error: error.message
+        });
     }
 });
 
@@ -465,22 +491,29 @@ router.post('/cancel', async (req, res) => {
             return res.status(400).json({ message: 'Campos obrigatórios: appointmentId, customerPhone, tenantId' });
         }
 
-        const updated = await AppointmentService.updateStatusByCustomer(
-            appointmentId,
-            customerPhone,
-            tenantId,
-            APPOINTMENT_STATUS.CANCELADO,
-            [APPOINTMENT_STATUS.PENDENTE, APPOINTMENT_STATUS.AGENDADO]
-        );
-        
-        if (!updated) {
-            return res.status(404).json({ message: 'Agendamento não encontrado ou não pode ser cancelado.' });
+        // appointmentId deve ser inteiro positivo (prevenção de SQL injection)
+        const apptId = Number(appointmentId);
+        if (!Number.isInteger(apptId) || apptId <= 0) {
+            return res.status(400).json({ message: 'appointmentId inválido.' });
         }
 
-        res.status(200).json({ message: 'Agendamento cancelado com sucesso' });
+        const deleted = await Appointment.destroy({
+            where: {
+                id: apptId,
+                customerPhone,
+                tenantId
+            }
+        });
+
+        if (!deleted) {
+            return res.status(404).json({ message: 'Agendamento não encontrado ou já removido.' });
+        }
+
+        res.status(200).json({ message: 'Agendamento excluído com sucesso' });
+        
     } catch (error) {
-        console.error('Erro ao cancelar agendamento público:', error);
-        res.status(500).json({ message: 'Erro ao cancelar agendamento: ' + error.message });
+        console.error('Erro ao excluir agendamento:', error);
+        res.status(500).json({ message: 'Erro ao excluir agendamento: ' + error.message });
     }
 });
 
@@ -490,9 +523,26 @@ router.get('/available-times', async (req, res) => {
         let { professionalId, date, tenantId, serviceId } = req.query;
 
         if (!professionalId || !date || !tenantId) {
-            return res.status(400).json({ 
-                message: 'Parâmetros obrigatórios: professionalId, date, tenantId' 
+            return res.status(400).json({
+                message: 'Parâmetros obrigatórios: professionalId, date, tenantId'
             });
+        }
+
+        // Valida formato da data
+        const dateOnly = String(date).split('T')[0];
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOnly)) {
+            return res.status(400).json({ message: 'Formato de data inválido. Use YYYY-MM-DD.' });
+        }
+        const parsedDate = new Date(dateOnly + 'T00:00:00');
+        if (isNaN(parsedDate.getTime())) {
+            return res.status(400).json({ message: 'Data inválida.' });
+        }
+
+        // Bloqueia datas no passado
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (parsedDate < today) {
+            return res.status(200).json({ availableTimes: [], overflowTimes: [], serviceDuration: 30 });
         }
 
         if (typeof professionalId === 'string' && professionalId.startsWith('user-')) {
@@ -511,6 +561,7 @@ router.get('/available-times', async (req, res) => {
             overflowTimes: availability.overflowTimes || [],
             serviceDuration: availability.serviceDuration || 30
         });
+        
     } catch (error) {
         console.error('Erro ao buscar horários disponíveis:', error);
         res.status(500).json({ message: 'Erro ao buscar horários disponíveis: ' + error.message });
@@ -544,10 +595,21 @@ router.get('/request/:id', async (req, res) => {
             status: request.status,
             expiresAt: request.expiresAt
         });
+        
     } catch (error) {
         console.error('Erro ao buscar solicitacao:', error);
         res.status(500).json({ message: 'Erro ao buscar solicitacao: ' + error.message });
     }
+});
+
+// Endpoint de teste
+router.post('/test', (req, res) => {
+    console.log('✅ Endpoint de teste funcionando!');
+    res.json({ 
+        success: true, 
+        message: 'Endpoint de teste funcionando',
+        received: req.body 
+    });
 });
 
 module.exports = router;

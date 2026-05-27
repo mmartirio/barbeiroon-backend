@@ -163,6 +163,14 @@ class TenantOnboardingService {
     /**
      * Processo completo de onboarding
      */
+    validateEmail(email) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    }
+
+    sanitize(str) {
+        return typeof str === 'string' ? str.replace(/<[^>]*>/g, '').trim() : str;
+    }
+
     async onboardTenant(data) {
         const transaction = await sequelize.transaction();
 
@@ -172,8 +180,27 @@ class TenantOnboardingService {
                 throw new Error('Por favor, informe o nome fantasia e o e-mail da barbearia');
             }
 
+            if (!this.validateEmail(data.email)) {
+                throw new Error('O e-mail da barbearia não é válido.');
+            }
+
             if (!data.ownerName || !data.ownerEmail || !data.ownerPassword) {
                 throw new Error('Por favor, preencha todos os dados do proprietário: nome, e-mail e senha');
+            }
+
+            if (!this.validateEmail(data.ownerEmail)) {
+                throw new Error('O e-mail do proprietário não é válido.');
+            }
+
+            // Sanitiza campos de texto para prevenir XSS
+            data.name        = this.sanitize(data.name);
+            data.companyName = this.sanitize(data.companyName);
+            data.ownerName   = this.sanitize(data.ownerName);
+
+            // Valida planType — impede escalação de privilégio via campo livre
+            const ALLOWED_PLAN_TYPES = ['free', 'basic', 'pro', 'enterprise'];
+            if (data.planType && !ALLOWED_PLAN_TYPES.includes(data.planType)) {
+                data.planType = 'free'; // silenciosamente normaliza em vez de rejeitar
             }
 
             // Valida CNPJ se fornecido

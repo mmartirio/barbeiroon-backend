@@ -9,8 +9,11 @@ router.post('/indisponibilidade', agendaController.saveIndisponibilidade);
 router.post('/encerramento-antecipado', agendaController.saveEncerramentoAntecipado);
 
 
-// Salvar expediente (placeholder)
-router.post('/', require('../controllers/agendaController').saveExpediente);
+// Buscar expediente de um profissional (com fallback para agenda global)
+router.get('/', agendaController.getExpediente);
+
+// Salvar expediente
+router.post('/', agendaController.saveExpediente);
 
 module.exports = router;
 

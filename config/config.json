@@ -2,7 +2,7 @@
   "development": {
     "username": "barbeiro_user",
     "password": "barbeiro_pass",
-    "database": "meu_barbeiro",
+    "database": "barbeiro_on",
     "host": "mysql",
     "dialect": "mysql"
   }

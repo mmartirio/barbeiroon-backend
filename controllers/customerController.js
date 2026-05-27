@@ -118,10 +118,13 @@ exports.deleteCustomer = async (req, res) => {
     }
 };
 
+const stripHtml = (str) => typeof str === 'string' ? str.replace(/<[^>]*>/g, '').trim() : str;
+
 // Endpoint específico para verificar/criar cliente pelo portal (sem autenticação de usuário)
 exports.getOrCreateCustomer = async (req, res) => {
     try {
-        const { phone, name, birthDate, tenantId } = req.body;
+        const { phone, birthDate, tenantId } = req.body;
+        const name = stripHtml(req.body.name);
 
         if (!phone || !tenantId) {
             return res.status(400).json({ message: 'Telefone e tenantId são obrigatórios' });

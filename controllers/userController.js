@@ -28,14 +28,15 @@ exports.getAllBarbersPublic = async (req, res) => {
         const tenantId = req.params.tenantId;
         const users = await require('../models/User').findAll({
             where: { tenantId, isActive: true, isBarber: true },
-            attributes: ['id', 'name']
+            attributes: ['id', 'name', 'profileImageId']
         });
 
         const mappedUsers = users.map((u) => {
             const plain = typeof u.get === 'function' ? u.get({ plain: true }) : u;
             return {
-                ...plain,
-                imageUrl: null,
+                id: plain.id,
+                name: plain.name,
+                imageUrl: plain.profileImageId ? `/api/images/image/${plain.profileImageId}` : null,
             };
         });
 
@@ -45,8 +46,50 @@ exports.getAllBarbersPublic = async (req, res) => {
         res.status(500).json({ message: 'Não foi possível carregar os barbeiros.' });
     }
 };
+exports.getBarbers = async (req, res) => {
+    try {
+        const tenantId = req.tenant?.id;
+        if (!tenantId) return res.status(400).json({ message: 'Tenant não identificado.' });
+
+        const User = require('../models/User');
+
+        let users = await User.findAll({
+            where: { tenantId, isActive: true, isBarber: true },
+            attributes: ['id', 'name'],
+        });
+
+        // Fallback: se nenhum usuário tiver isBarber=true, retorna todos os ativos
+        if (users.length === 0) {
+            users = await User.findAll({
+                where: { tenantId, isActive: true },
+                attributes: ['id', 'name'],
+            });
+        }
+
+        res.status(200).json({ users: users.map(u => u.get({ plain: true })) });
+    } catch (error) {
+        res.status(500).json({ message: 'Não foi possível carregar os barbeiros.' });
+    }
+};
+
 const UserService = require('../services/userService');
 const Image = require('../models/Image');
+const Professional = require('../models/Professional');
+
+// Sincroniza usuário com isBarber=true na tabela professional
+const syncBarberToProfessional = async (user, tenantId) => {
+    if (!user || !tenantId) return;
+    try {
+        if (user.isBarber) {
+            const existing = await Professional.findOne({ where: { name: user.name, tenantId } });
+            if (!existing) {
+                await Professional.create({ name: user.name, specialty: 'Barbeiro', tenantId });
+            }
+        }
+    } catch (err) {
+        console.error('Erro ao sincronizar barbeiro com professional:', err.message);
+    }
+};
 
 const saveProfileImage = async ({ profileImageBase64, profileImageContentType }) => {
     if (!profileImageBase64) return null;
@@ -112,6 +155,24 @@ exports.register = async (req, res) => {
             return res.status(400).json({ message: '🔐 Por favor, informe uma senha com no mínimo 6 caracteres.' });
         }
 
+        // Verificar limite de usuários do plano
+        const { getEffectiveLimits } = require('../middlewares/planLimitMiddleware');
+        const limits = getEffectiveLimits(req.tenant);
+        if (limits.maxUsers !== null) {
+            const User = require('../models/User');
+            const userCount = await User.count({ where: { tenantId, isActive: true } });
+            if (userCount >= limits.maxUsers) {
+                return res.status(403).json({
+                    message: `Você atingiu o limite de ${limits.maxUsers} usuário(s) do plano ${limits.planName}. Para cadastrar mais usuários, entre em contato com o suporte ou faça upgrade do seu plano.`,
+                    limitReached: true,
+                    limitType: 'users',
+                    limit: limits.maxUsers,
+                    current: userCount,
+                    planName: limits.planName,
+                });
+            }
+        }
+
         const existingUser = await UserService.findByEmail(email, tenantId);
         if (existingUser) {
             return res.status(400).json({ message: '✉️ Este e-mail já está sendo usado por outro usuário. Por favor, utilize um e-mail diferente.' });
@@ -126,7 +187,8 @@ exports.register = async (req, res) => {
             isBarber,
             profileImageId,
         });
-        res.status(201).json({ 
+        await syncBarberToProfessional(newUser, tenantId);
+        res.status(201).json({
             message: 'Usuário registrado com sucesso', 
             user: {
                 id: newUser.id,
@@ -184,6 +246,7 @@ exports.userEdit = async (req, res) => {
         if (!updatedUser) {
             return res.status(404).json({ message: '🔍 Usuário não encontrado para edição.' });
         }
+        await syncBarberToProfessional(updatedUser, tenantId);
         res.status(200).json(updatedUser);
     } catch (error) {
         console.error('Erro ao editar usuário:', error);

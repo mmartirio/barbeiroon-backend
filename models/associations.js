@@ -6,6 +6,7 @@ const Appointment = require('./Appointment');
 const Service = require('./Service');
 const Professional = require('./Professional');
 const Promotion = require('./Promotion');
+const Plan = require('./Plan');
 
 // Relacionamentos User e Group
 User.belongsTo(Group, { foreignKey: 'groupId', as: 'group' });
@@ -37,6 +38,10 @@ Tenant.hasMany(Appointment, { foreignKey: 'tenantId', as: 'appointments' });
 Promotion.belongsTo(Tenant, { foreignKey: 'tenantId', as: 'tenant' });
 Tenant.hasMany(Promotion, { foreignKey: 'tenantId', as: 'promotions' });
 
+// Tenant ↔ Plan
+Tenant.belongsTo(Plan, { foreignKey: 'planId', as: 'plan' });
+Plan.hasMany(Tenant, { foreignKey: 'planId', as: 'tenants' });
+
 module.exports = {
     User,
     Group,
@@ -45,5 +50,6 @@ module.exports = {
     Appointment,
     Service,
     Professional,
-    Promotion
+    Promotion,
+    Plan,
 };

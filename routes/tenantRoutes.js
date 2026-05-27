@@ -21,6 +21,9 @@ router.get('/:id/config', tenantController.getConfig);
 
 // ===== ROTAS PROTEGIDAS (requerem autenticação) =====
 
+// Plano atual do tenant com uso em tempo real
+router.get('/plan', tenantMiddleware, tenantController.getPlan);
+
 // Buscar configurações da barbearia
 router.get(
     '/settings',

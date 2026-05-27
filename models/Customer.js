@@ -20,6 +20,7 @@ Customer.init({
     },
     tenantId: {
         type: DataTypes.INTEGER,
+        primaryKey: true,
         allowNull: false,
         references: {
             model: 'tenants',

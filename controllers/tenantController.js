@@ -3,6 +3,58 @@ const User = require('../models/User');
 const Group = require('../models/Group');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const { QueryTypes } = require('sequelize');
+const sequelize = require('../config/db');
+const { getEffectiveLimits } = require('../middlewares/planLimitMiddleware');
+
+// Retorna o plano atual do tenant com uso em tempo real
+exports.getPlan = async (req, res) => {
+    try {
+        const tenant = req.tenant;
+        const tenantId = tenant.id;
+        const limits = getEffectiveLimits(tenant);
+
+        const now = new Date();
+        const [userCount, [appointmentRow]] = await Promise.all([
+            User.count({ where: { tenantId, isActive: true } }),
+            sequelize.query(
+                `SELECT COUNT(*) AS cnt FROM appointment
+                 WHERE tenant_id = :tenantId
+                   AND YEAR(appointment_date) = :year
+                   AND MONTH(appointment_date) = :month
+                   AND status != 'cancelado'`,
+                {
+                    replacements: { tenantId, year: now.getFullYear(), month: now.getMonth() + 1 },
+                    type: QueryTypes.SELECT,
+                }
+            ),
+        ]);
+
+        const appointmentCount = Number(appointmentRow?.cnt || 0);
+
+        res.json({
+            plan: tenant.plan || null,
+            planType: tenant.planType,
+            limits,
+            usage: {
+                users: {
+                    current: userCount,
+                    max: limits.maxUsers,
+                    pct: limits.maxUsers ? Math.round((userCount / limits.maxUsers) * 100) : 0,
+                },
+                appointments: {
+                    current: appointmentCount,
+                    max: limits.maxAppointments,
+                    pct: limits.maxAppointments ? Math.round((appointmentCount / limits.maxAppointments) * 100) : 0,
+                    month: `${now.getMonth() + 1}/${now.getFullYear()}`,
+                },
+            },
+        });
+    } catch (error) {
+        console.error('Erro ao buscar plano do tenant:', error);
+        res.status(500).json({ message: 'Erro ao buscar informações do plano.' });
+    }
+};
 
 exports.registerAdmin = async (req, res) => {
     try {
@@ -236,7 +288,11 @@ exports.getSettings = async (req, res) => {
         const Tenant = require('../models/Tenant');
         
         const tenant = await Tenant.findByPk(tenantId, {
-            attributes: ['id', 'name', 'slug', 'email', 'phone', 'logo', 'backgroundImage']
+            attributes: [
+                'id', 'name', 'companyName', 'cnpj', 'slug', 'email', 'phone',
+                'address', 'neighborhood', 'city', 'state', 'zipCode',
+                'ownerName', 'ownerPhone', 'logo', 'backgroundImage', 'planType'
+            ]
         });
 
         if (!tenant) {
@@ -296,6 +352,13 @@ exports.uploadAssets = async (req, res) => {
 
 exports.getAll = async (req, res) => {
     try {
+        // Se X-Tenant-Slug header presente, validar formato
+        const slug = req.headers['x-tenant-slug'];
+        if (slug !== undefined) {
+            if (!slug || !/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
+                return res.status(400).json({ message: 'Slug inválido.' });
+            }
+        }
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const result = await TenantService.getAll({ page, limit });
@@ -308,11 +371,17 @@ exports.getAll = async (req, res) => {
 
 exports.create = async (req, res) => {
     try {
-        const tenant = await TenantService.create(req.body);
+        const { name, email } = req.body || {};
+        if (!name || !email) {
+            return res.status(400).json({ message: 'Nome e email são obrigatórios.' });
+        }
+        const stripHtml = (s) => typeof s === 'string' ? s.replace(/<[^>]*>/g, '').trim() : s;
+        const sanitized = { ...req.body, name: stripHtml(name) };
+        const tenant = await TenantService.create(sanitized);
         res.status(201).json(tenant);
     } catch (error) {
         console.error('Erro ao criar barbearia:', error);
-        res.status(500).json({ message: 'Erro ao criar barbearia' });
+        res.status(400).json({ message: error.message || 'Erro ao criar barbearia' });
     }
 };
 

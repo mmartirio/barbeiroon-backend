@@ -2,6 +2,7 @@ const User = require('../models/User');
 const Customer = require('../models/Customer');
 const Service = require('../models/Service');
 const Appointment = require('../models/Appointment');
+const Tenant = require('../models/Tenant');
 const sequelize = require('../config/db');
 const { QueryTypes } = require('sequelize');
 
@@ -59,13 +60,17 @@ exports.getStats = async (req, res) => {
     }
 
     const now = new Date();
-    const today = now.toISOString().split('T')[0];
+    // Usar hora local (TZ=America/Sao_Paulo no container) para evitar desvio UTC
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const nowMinutes = (now.getHours() * 60) + now.getMinutes();
     const currentMonth = now.getMonth() + 1;
 
-    const [totalClients, customers, monthAppointments, allAppointments] = await Promise.all([
+    const [totalClients, customerRows, monthAppointments, allAppointments] = await Promise.all([
       Customer.count({ where: { tenantId } }),
-      Customer.findAll({ where: { tenantId }, attributes: ['name', 'birthDate'] }),
+      sequelize.query(
+        'SELECT phone, name, DATE_FORMAT(birth_date, \'%Y-%m-%d\') AS birthDate FROM customers WHERE tenant_id = :tenantId',
+        { replacements: { tenantId }, type: QueryTypes.SELECT }
+      ),
       Appointment.findAll({
         where: { tenantId },
         include: [{ model: Service, as: 'service', attributes: ['name', 'price'] }]
@@ -174,8 +179,7 @@ exports.getStats = async (req, res) => {
         revenue: `R$ ${service.revenueValue.toFixed(2)}`
       }));
 
-    const birthdays = customers
-      .map((customer) => (typeof customer.get === 'function' ? customer.get({ plain: true }) : customer))
+    const birthdays = customerRows
       .filter((customer) => {
         if (!customer.birthDate) return false;
         const date = new Date(`${customer.birthDate}T00:00:00`);
@@ -184,13 +188,18 @@ exports.getStats = async (req, res) => {
       .slice(0, 8)
       .map((customer) => ({
         name: customer.name,
+        phone: customer.phone,
         date: formatBirthday(customer.birthDate)
       }));
+
+    const tenant = await Tenant.findByPk(tenantId, { attributes: ['name', 'companyName'] });
+    const tenantName = tenant?.companyName || tenant?.name || 'nossa barbearia';
 
     res.json({
       totalClients,
       totalAppointments: todaysAppointments.length,
       monthlyRevenue,
+      tenantName,
       servicesPerformed: allAppointments
         .map(a => (typeof a.get === 'function' ? a.get({ plain: true }) : a))
         .filter(a => a.status === 'concluido').length,

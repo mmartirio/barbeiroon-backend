@@ -1,6 +1,39 @@
 const AgendaSettings = require('../models/AgendaSettings');
 const User = require('../models/User');
 
+exports.getExpediente = async (req, res) => {
+	try {
+		const tenantId = req.tenant?.id;
+		const { professionalId } = req.query;
+
+		let agenda = null;
+
+		if (professionalId) {
+			agenda = await AgendaSettings.findOne({ where: { tenantId, professionalId } });
+		}
+
+		if (!agenda) {
+			agenda = await AgendaSettings.findOne({ where: { tenantId, professionalId: null } });
+		}
+
+		if (!agenda) {
+			return res.status(404).json({ message: 'Expediente não configurado.' });
+		}
+
+		return res.json({
+			inicioExpediente: agenda.inicioExpediente?.slice(0, 5) || null,
+			fimExpediente: agenda.fimExpediente?.slice(0, 5) || null,
+			inicioAlmoco: agenda.inicioAlmoco?.slice(0, 5) || null,
+			fimAlmoco: agenda.fimAlmoco?.slice(0, 5) || null,
+			diasSelecionados: agenda.diasSelecionados ? JSON.parse(agenda.diasSelecionados) : [],
+			diasCalendario: agenda.diasCalendario ? JSON.parse(agenda.diasCalendario) : [],
+		});
+	} catch (error) {
+		console.error('Erro ao buscar expediente:', error);
+		res.status(500).json({ message: 'Não foi possível buscar o expediente.' });
+	}
+};
+
 // Handler para salvar expediente
 exports.saveExpediente = async (req, res) => {
 	try {

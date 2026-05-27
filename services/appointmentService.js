@@ -1,7 +1,8 @@
 const Appointment = require('../models/Appointment');
 const Customer = require('../models/Customer');
 const Service = require('../models/Service');
-const User = require('../models/User'); // Use User em vez de Professional
+const User = require('../models/User');
+const Professional = require('../models/Professional');
 const sequelize = require('../config/db');
 const { QueryTypes, Op } = require('sequelize');
 
@@ -14,74 +15,44 @@ const APPOINTMENT_STATUS = Object.freeze({
 
 class AppointmentService {
     // Consulta para relatório de agendamentos (usado pelo mobile)
-    static async getAllForReport({ tenantId, where = {}, startDate, endDate }) {
-        try {
-            console.log('🔍 AppointmentService.getAllForReport chamado');
-            console.log('Parâmetros:', { tenantId, startDate, endDate });
-            
-            const query = {
-                where: { ...where, tenantId },
-                include: [
-                    {
-                        model: Customer,
-                        as: 'customer',
-                        attributes: ['id', 'phone', 'name', 'birthDate']
-                    },
-                    {
-                        model: Service,
-                        as: 'service',
-                        attributes: ['id', 'name', 'price', 'duration']
-                    },
-                    {
-                        model: User,
-                        as: 'professional',
-                        attributes: ['id', 'name']
-                    }
-                ],
-                order: [['appointmentDate', 'DESC'], ['appointmentTime', 'DESC']]
-            };
-            
-            if (startDate && endDate) {
-                query.where.appointmentDate = { [Op.gte]: startDate, [Op.lte]: endDate };
-            }
-            
-            console.log('Query executando...');
-            const appointments = await Appointment.findAll(query);
-            console.log(`✅ Encontrados ${appointments.length} agendamentos`);
-            
-            return appointments;
-        } catch (error) {
-            console.error('❌ Erro em getAllForReport:', error);
-            // Se falhar com Professional, tenta sem o include do profissional
-            if (error.message.includes('professional')) {
-                console.log('⚠️ Tentando sem o include do profissional...');
-                const query = {
-                    where: { ...where, tenantId },
-                    include: [
-                        {
-                            model: Customer,
-                            as: 'customer',
-                            attributes: ['id', 'phone', 'name', 'birthDate']
-                        },
-                        {
-                            model: Service,
-                            as: 'service',
-                            attributes: ['id', 'name', 'price', 'duration']
-                        }
-                    ],
-                    order: [['appointmentDate', 'DESC'], ['appointmentTime', 'DESC']]
-                };
-                
-                if (startDate && endDate) {
-                    query.where.appointmentDate = { [Op.gte]: startDate, [Op.lte]: endDate };
-                }
-                
-                const appointments = await Appointment.findAll(query);
-                console.log(`✅ Encontrados ${appointments.length} agendamentos (sem profissional)`);
-                return appointments;
-            }
-            throw error;
+    static async getAllForReport({ tenantId, startDate, endDate, professionalId, serviceId, customerPhone }) {
+        const where = { tenantId };
+        if (startDate && endDate) {
+            where.appointmentDate = { [Op.gte]: startDate, [Op.lte]: endDate };
         }
+        if (professionalId) where.professionalId = parseInt(professionalId);
+        if (serviceId)      where.serviceId = parseInt(serviceId);
+        if (customerPhone)  where.customerPhone = customerPhone;
+
+        const query = {
+            where,
+            include: [
+                {
+                    model: Customer,
+                    as: 'customer',
+                    required: false,
+                    attributes: ['phone', 'name']
+                },
+                {
+                    model: Service,
+                    as: 'service',
+                    required: false,
+                    attributes: ['id', 'name', 'price', 'duration']
+                },
+                {
+                    model: Professional,
+                    as: 'professional',
+                    required: false,
+                    attributes: ['id', 'name']
+                }
+            ],
+            order: [['appointmentDate', 'DESC'], ['appointmentTime', 'DESC']]
+        };
+
+        console.log('🔍 getAllForReport:', { tenantId, startDate, endDate, professionalId, serviceId, customerPhone });
+        const appointments = await Appointment.findAll(query);
+        console.log(`✅ Encontrados ${appointments.length} agendamentos`);
+        return appointments;
     }
 
     // Método getAll com paginação
@@ -103,7 +74,7 @@ class AppointmentService {
                         attributes: ['id', 'name', 'price', 'duration']
                     },
                     {
-                        model: User,
+                        model: Professional,
                         as: 'professional',
                         attributes: ['id', 'name']
                     }
@@ -143,24 +114,50 @@ class AppointmentService {
         }
     }
 
+    static async getById(id, tenantId) {
+        return Appointment.findOne({
+            where: { id, tenantId },
+            include: [
+                { model: Customer,     as: 'customer',     attributes: ['phone', 'name', 'birthDate'] },
+                { model: Service,      as: 'service',      attributes: ['id', 'name', 'price', 'duration'] },
+                { model: Professional, as: 'professional', attributes: ['id', 'name'] },
+            ],
+        });
+    }
+
     static async create(data, tenantId) {
         let appointmentDate = data.appointmentDate;
         let appointmentTime = data.appointmentTime;
 
         if (data.date && (!appointmentDate || !appointmentTime)) {
             const [datePart, timePart] = String(data.date).split('T');
-            if (datePart) {
-                appointmentDate = datePart;
-            }
-            if (timePart) {
-                appointmentTime = timePart.slice(0, 8);
-            }
+            if (datePart) appointmentDate = datePart;
+            if (timePart) appointmentTime = timePart.slice(0, 8);
+        }
+
+        // Verifica conflito: mesmo profissional, data e horário com status ativo
+        // Agendamentos cancelados não bloqueiam o horário (ficam de fora da query)
+        const conflict = await Appointment.findOne({
+            where: {
+                tenantId,
+                professionalId: data.professionalId,
+                appointmentDate,
+                appointmentTime,
+                status: [APPOINTMENT_STATUS.AGENDADO, APPOINTMENT_STATUS.PENDENTE],
+            },
+        });
+
+        if (conflict) {
+            const err = new Error('Já existe um agendamento para este profissional neste horário. Escolha outro horário.');
+            err.statusCode = 409;
+            throw err;
         }
 
         return await Appointment.create({
             customerPhone: data.customerPhone,
             serviceId: data.serviceId,
             professionalId: data.professionalId,
+            promotionId: data.promotionId || null,
             appointmentDate,
             appointmentTime,
             status: data.status || APPOINTMENT_STATUS.AGENDADO,
@@ -250,39 +247,22 @@ class AppointmentService {
     }
 
     static async getByCustomerPhone(customerPhone, tenantId) {
-        try {
-            return await Appointment.findAll({
-                where: { customerPhone, tenantId },
-                include: [
-                    {
-                        model: Service,
-                        as: 'service',
-                        attributes: ['id', 'name', 'price', 'duration']
-                    },
-                    {
-                        model: User,
-                        as: 'professional',
-                        attributes: ['id', 'name']
-                    }
-                ],
-                order: [['appointmentDate', 'DESC'], ['appointmentTime', 'DESC']]
-            });
-        } catch (error) {
-            if (error.message.includes('professional')) {
-                return await Appointment.findAll({
-                    where: { customerPhone, tenantId },
-                    include: [
-                        {
-                            model: Service,
-                            as: 'service',
-                            attributes: ['id', 'name', 'price', 'duration']
-                        }
-                    ],
-                    order: [['appointmentDate', 'DESC'], ['appointmentTime', 'DESC']]
-                });
-            }
-            throw error;
-        }
+        return await Appointment.findAll({
+            where: { customerPhone, tenantId },
+            include: [
+                {
+                    model: Service,
+                    as: 'service',
+                    attributes: ['id', 'name', 'price', 'duration']
+                },
+                {
+                    model: Professional,
+                    as: 'professional',
+                    attributes: ['id', 'name']
+                }
+            ],
+            order: [['appointmentDate', 'DESC'], ['appointmentTime', 'DESC']]
+        });
     }
 
     static async getAllGroupedByProfessional(tenantId, date) {

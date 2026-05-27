@@ -7,12 +7,12 @@ const bcrypt = require('bcryptjs');
 async function seedDefault() {
   try {
     // Verifica se já existe o tenant padrão
-    let tenant = await Tenant.findOne({ where: { slug: 'meu-barbeiro' } });
+    let tenant = await Tenant.findOne({ where: { slug: 'barbeiro-on' } });
     if (!tenant) {
       tenant = await Tenant.create({
-        name: 'Meu Barbeiro',
-        slug: 'meu-barbeiro',
-        email: 'contato@meubarbeiro.com',
+        name: 'Barbeiro On',
+        slug: 'barbeiro-on',
+        email: 'contato@barbeiroon.com',
       });
       console.log('Tenant padrão criado:', tenant.toJSON());
     } else {
@@ -53,12 +53,12 @@ async function seedDefault() {
     }
 
     // Verifica se já existe o admin padrão
-    let admin = await User.findOne({ where: { email: 'admin@meubarbeiro.com', tenantId: tenant.id } });
+    let admin = await User.findOne({ where: { email: 'admin@barbeiroon.com', tenantId: tenant.id } });
     if (!admin) {
       const hashedPassword = await bcrypt.hash('admin@123', 10);
       admin = await User.create({
         name: 'Admin',
-        email: 'admin@meubarbeiro.com',
+        email: 'admin@barbeiroon.com',
         password: hashedPassword,
         groupId: adminGroup.id,
         tenantId: tenant.id,
@@ -73,3 +73,10 @@ async function seedDefault() {
 }
 
 module.exports = seedDefault;
+
+// Auto-executa quando chamado diretamente: node seedDefault.js
+if (require.main === module) {
+  seedDefault()
+    .then(() => { console.log('Seed concluído com sucesso.'); process.exit(0); })
+    .catch(err => { console.error('Erro fatal no seed:', err); process.exit(1); });
+}

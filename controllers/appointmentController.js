@@ -4,6 +4,7 @@ const User = require('../models/User');
 const AppointmentRequest = require('../models/AppointmentRequest');
 const Service = require('../models/Service');
 const sequelize = require('../config/db');
+const { QueryTypes } = require('sequelize');
 
 const APPOINTMENT_STATUS = Object.freeze({
     PENDENTE: 'pendente',
@@ -13,6 +14,24 @@ const APPOINTMENT_STATUS = Object.freeze({
 });
 
 let completedAppointmentsTableReady = false;
+let pendingPromotionsTableReady = false;
+
+const ensurePendingPromotionsTable = async () => {
+    if (pendingPromotionsTableReady) return;
+    await sequelize.query(`
+        CREATE TABLE IF NOT EXISTS customer_pending_promotions (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            customer_phone VARCHAR(20) NOT NULL,
+            promotion_id INT NOT NULL,
+            tenant_id INT NOT NULL,
+            activated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            redeemed_at DATETIME NULL,
+            redeemed_appointment_id INT NULL,
+            INDEX idx_cpp_customer (customer_phone, tenant_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    `);
+    pendingPromotionsTableReady = true;
+};
 
 const ensureCompletedAppointmentsTable = async () => {
     if (completedAppointmentsTableReady) return;
@@ -73,6 +92,62 @@ const registerCompletedAppointment = async ({ appointment, tenantId }) => {
     );
 };
 
+exports.checkPendingPromotions = async (req, res) => {
+    try {
+        const tenantId = req.tenant.id;
+        const { customerPhone } = req.query;
+        if (!customerPhone) return res.status(400).json({ message: 'customerPhone é obrigatório.' });
+
+        await ensurePendingPromotionsTable();
+
+        const pending = await sequelize.query(
+            `SELECT cpp.id, cpp.promotion_id AS promotionId, p.name, p.price,
+                    p.price_type AS priceType, p.discount_type AS discountType
+             FROM customer_pending_promotions cpp
+             JOIN promotions p ON p.id = cpp.promotion_id
+             WHERE cpp.customer_phone = :customerPhone
+               AND cpp.tenant_id = :tenantId
+               AND cpp.redeemed_at IS NULL`,
+            { replacements: { customerPhone, tenantId }, type: QueryTypes.SELECT }
+        );
+
+        res.status(200).json({ pendingPromotions: pending, hasPending: pending.length > 0 });
+    } catch (error) {
+        console.error('Erro ao verificar promoções pendentes:', error);
+        res.status(500).json({ message: 'Não foi possível verificar promoções pendentes.' });
+    }
+};
+
+exports.checkPromotionUsage = async (req, res) => {
+    try {
+        const tenantId = req.tenant.id;
+        const { customerPhone, promotionId } = req.query;
+        if (!customerPhone || !promotionId) {
+            return res.status(400).json({ message: 'customerPhone e promotionId são obrigatórios.' });
+        }
+
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = now.getMonth() + 1;
+
+        const [result] = await sequelize.query(
+            `SELECT COUNT(*) AS cnt FROM appointment
+             WHERE customer_phone = :customerPhone
+               AND promotion_id = :promotionId
+               AND tenant_id = :tenantId
+               AND YEAR(appointment_date) = :year
+               AND MONTH(appointment_date) = :month`,
+            { replacements: { customerPhone, promotionId, tenantId, year, month }, type: QueryTypes.SELECT }
+        );
+
+        const alreadyUsed = Number(result?.cnt || 0) > 0;
+        res.status(200).json({ alreadyUsed });
+    } catch (error) {
+        console.error('Erro ao verificar uso de promoção:', error);
+        res.status(500).json({ message: 'Não foi possível verificar o uso da promoção.' });
+    }
+};
+
 exports.getAll = async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
@@ -89,7 +164,63 @@ exports.getAll = async (req, res) => {
 exports.create = async (req, res) => {
     try {
         const tenantId = req.tenant.id;
+
+        // Verificar limite mensal de agendamentos do plano
+        const { getEffectiveLimits } = require('../middlewares/planLimitMiddleware');
+        const limits = getEffectiveLimits(req.tenant);
+        if (limits.maxAppointments !== null) {
+            const now = new Date();
+            const [countRow] = await sequelize.query(
+                `SELECT COUNT(*) AS cnt FROM appointment
+                 WHERE tenant_id = :tenantId
+                   AND YEAR(appointment_date) = :year
+                   AND MONTH(appointment_date) = :month
+                   AND status != 'cancelado'`,
+                {
+                    replacements: { tenantId, year: now.getFullYear(), month: now.getMonth() + 1 },
+                    type: QueryTypes.SELECT,
+                }
+            );
+            const currentCount = Number(countRow?.cnt || 0);
+            if (currentCount >= limits.maxAppointments) {
+                return res.status(403).json({
+                    message: `Você atingiu o limite de ${limits.maxAppointments} agendamentos deste mês no plano ${limits.planName}. O limite renova automaticamente no início do próximo mês. Entre em contato com o suporte para fazer upgrade.`,
+                    limitReached: true,
+                    limitType: 'appointments',
+                    limit: limits.maxAppointments,
+                    current: currentCount,
+                    planName: limits.planName,
+                });
+            }
+        }
+
         const appointment = await AppointmentService.create(req.body, tenantId);
+
+        // Registrar ativação de promoção "próxima compra"
+        if (req.body.promotionId && req.body.activateNextPurchase) {
+            try {
+                await ensurePendingPromotionsTable();
+                await sequelize.query(
+                    'INSERT INTO customer_pending_promotions (customer_phone, promotion_id, tenant_id) VALUES (?, ?, ?)',
+                    { replacements: [req.body.customerPhone, req.body.promotionId, tenantId] }
+                );
+            } catch (err) {
+                console.error('Erro ao registrar promoção pendente:', err.message);
+            }
+        }
+
+        // Marcar promoção pendente como resgatada
+        if (req.body.pendingPromotionRecordId) {
+            try {
+                await ensurePendingPromotionsTable();
+                await sequelize.query(
+                    'UPDATE customer_pending_promotions SET redeemed_at = NOW(), redeemed_appointment_id = ? WHERE id = ? AND tenant_id = ?',
+                    { replacements: [appointment.id, req.body.pendingPromotionRecordId, tenantId] }
+                );
+            } catch (err) {
+                console.error('Erro ao marcar promoção como resgatada:', err.message);
+            }
+        }
 
         const createdAppointment = await AppointmentService.getById(appointment.id, tenantId);
         const createdPlain = createdAppointment && typeof createdAppointment.get === 'function'
@@ -117,8 +248,26 @@ exports.create = async (req, res) => {
             console.error('Falha na notificacao WhatsApp de novo agendamento:', notifyResult);
         }
 
+        // Enviar confirmação ao cliente
+        try {
+            await WhatsAppService.sendConfirmationMessage({
+                to: createdPlain?.customer?.phone || createdPlain?.customerPhone,
+                customerName: createdPlain?.customer?.name,
+                serviceName: createdPlain?.service?.name,
+                servicePrice: createdPlain?.service?.price,
+                professionalName: createdPlain?.professional?.name || barber?.name,
+                appointmentDate: createdPlain?.appointmentDate,
+                appointmentTime: String(createdPlain?.appointmentTime || '').slice(0, 5),
+            });
+        } catch (err) {
+            console.error('Falha ao enviar confirmacao WhatsApp ao cliente:', err.message);
+        }
+
         res.status(201).json(appointment);
     } catch (error) {
+        if (error.statusCode === 409) {
+            return res.status(409).json({ message: error.message });
+        }
         console.error('Erro ao criar agendamento:', error);
         res.status(500).json({ message: '😞 Não foi possível criar o agendamento. Verifique se todos os dados foram preenchidos corretamente.' });
     }
@@ -262,9 +411,15 @@ exports.cancelOwn = async (req, res) => {
         }
 
         const { id } = req.params;
+        const { reason } = req.body || {};
         const tenantId = req.tenant.id;
         const professionalId = req.user.id;
         const canManageTenantAppointments = !!req.user?.permissions?.canViewAppointments;
+
+        const appointmentBeforeCancel = await AppointmentService.getById(id, tenantId);
+        const apptPlain = appointmentBeforeCancel && typeof appointmentBeforeCancel.get === 'function'
+            ? appointmentBeforeCancel.get({ plain: true })
+            : appointmentBeforeCancel;
 
         let updated = await AppointmentService.updateStatusByProfessional(
             id,
@@ -286,6 +441,21 @@ exports.cancelOwn = async (req, res) => {
         if (!updated) {
             return res.status(404).json({ message: 'Agendamento nao encontrado ou status invalido para cancelamento.' });
         }
+
+        if (apptPlain) {
+            try {
+                await WhatsAppService.sendCancellationMessage({
+                    to: apptPlain?.customer?.phone || apptPlain?.customerPhone,
+                    customerName: apptPlain?.customer?.name,
+                    appointmentDate: apptPlain?.appointmentDate,
+                    appointmentTime: String(apptPlain?.appointmentTime || '').slice(0, 5),
+                    reason: reason || null,
+                });
+            } catch (err) {
+                console.error('Falha ao enviar cancelamento WhatsApp ao cliente:', err.message);
+            }
+        }
+
         res.status(200).json({ message: 'Agendamento cancelado com sucesso' });
     } catch (error) {
         console.error('Erro ao cancelar agendamento do barbeiro:', error);
@@ -488,9 +658,8 @@ exports.listPendingRequests = async (req, res) => {
 exports.listPendingRequestsOwn = async (req, res) => {
     try {
         const tenantId = req.tenant.id;
-        const professionalId = req.user.id;
         const requests = await AppointmentRequest.findAll({
-            where: { tenantId, professionalId, status: 'pending' },
+            where: { tenantId, status: 'pending' },
             order: [['createdAt', 'ASC']]
         });
 
@@ -504,18 +673,26 @@ exports.listPendingRequestsOwn = async (req, res) => {
         const filtered = requests.filter((r) => r.status === 'pending');
 
         const serviceIds = filtered.map((r) => r.serviceId);
+        const professionalIds = filtered.map((r) => r.professionalId);
+
         const services = await Service.findAll({
             where: { id: serviceIds, tenantId },
             attributes: ['id', 'name']
         });
+        const professionals = await User.findAll({
+            where: { id: professionalIds, tenantId },
+            attributes: ['id', 'name']
+        });
+
         const serviceMap = new Map(services.map((s) => [String(s.id), s.name]));
+        const professionalMap = new Map(professionals.map((p) => [String(p.id), p.name]));
 
         const result = filtered.map((request) => {
             const plain = typeof request.get === 'function' ? request.get({ plain: true }) : request;
             return {
                 ...plain,
                 serviceName: serviceMap.get(String(plain.serviceId)) || null,
-                professionalName: req.user?.name || null
+                professionalName: professionalMap.get(String(plain.professionalId)) || null
             };
         });
 
