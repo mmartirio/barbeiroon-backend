@@ -80,14 +80,18 @@ class PromotionService {
             // --- Gerar voucher para aniversariante elegível ---
             let voucher = null;
             if (isBirthdayPromo) {
-                const existing = await VoucherService.getValidVoucher({ customerPhone, tenantId, promotionId: promo.id });
-                if (existing) {
-                    voucher = existing.code;
-                } else {
-                    const expiresAt = new Date(today);
-                    expiresAt.setDate(today.getDate() + 7);
-                    const created = await VoucherService.generateVoucher({ customerPhone, tenantId, promotionId: promo.id, expiresAt });
-                    voucher = created.code;
+                try {
+                    const existing = await VoucherService.getValidVoucher({ customerPhone, tenantId, promotionId: promo.id });
+                    if (existing) {
+                        voucher = existing.code;
+                    } else {
+                        const expiresAt = new Date(today);
+                        expiresAt.setDate(today.getDate() + 7);
+                        const created = await VoucherService.generateVoucher({ customerPhone, tenantId, promotionId: promo.id, expiresAt });
+                        voucher = created.code;
+                    }
+                } catch (e) {
+                    console.warn('[Promo] falha ao gerar voucher (não crítico):', e.message);
                 }
             }
 
