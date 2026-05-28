@@ -11,8 +11,8 @@ const PixInvoice = require('../models/PixInvoice');
 const { generatePixEMV } = require('../utils/pixGenerator');
 const onboardingService = require('../services/tenantOnboardingService');
 
-const BOOTSTRAP_EMAIL    = 'admin@barbeiroon.com';
-const BOOTSTRAP_PASSWORD = 'admin@123';
+const BOOTSTRAP_EMAIL    = 'perfil@barbeiroon.com';
+const BOOTSTRAP_PASSWORD = 'perfil@123';
 
 const SECRET = process.env.JWT_SECRET || 'meu-barbeiro-secret';
 
