@@ -318,6 +318,38 @@ exports.updateTenant = async (req, res) => {
     }
 };
 
+exports.regenerateBootstrap = async (req, res) => {
+    try {
+        const tenant = await Tenant.findByPk(req.params.id);
+        if (!tenant) return res.status(404).json({ message: 'Empresa não encontrada.' });
+
+        const User = require('../models/User');
+        const { Op } = require('sequelize');
+
+        // Remove qualquer bootstrap anterior deste tenant
+        await User.destroy({
+            where: { tenantId: tenant.id, email: { [Op.like]: 'cliente.%@barbeiroon.com' } }
+        });
+
+        // Busca o grupo Administrador do tenant
+        const Group = require('../models/Group');
+        const adminGroup = await Group.findOne({ where: { tenantId: tenant.id, name: 'Administrador' } });
+        if (!adminGroup) return res.status(400).json({ message: 'Grupo Administrador não encontrado para este tenant.' });
+
+        const bsEmail = bootstrapEmail(tenant.slug);
+        await onboardingService.createAdminUser(tenant.id, adminGroup.id, {
+            name: 'Administrador',
+            email: bsEmail,
+            password: BOOTSTRAP_PASSWORD,
+        });
+
+        res.json({ bootstrapCredentials: { email: bsEmail, password: BOOTSTRAP_PASSWORD } });
+    } catch (error) {
+        console.error('Erro ao regenerar bootstrap:', error);
+        res.status(500).json({ message: 'Erro ao gerar acesso bootstrap.' });
+    }
+};
+
 exports.deleteTenant = async (req, res) => {
     try {
         const tenant = await Tenant.findByPk(req.params.id);

@@ -27,6 +27,7 @@ router.get('/tenants/:id', ctrl.getTenantById);
 router.post('/tenants', ctrl.createTenant);
 router.put('/tenants/:id', ctrl.updateTenant);
 router.delete('/tenants/:id', ctrl.deleteTenant);
+router.post('/tenants/:id/bootstrap', ctrl.regenerateBootstrap);
 
 // Planos
 router.get('/plans', ctrl.getPlans);
