@@ -192,6 +192,13 @@ exports.register = async (req, res) => {
             profileImageId,
         });
         await syncBarberToProfessional(newUser, tenantId);
+
+        // Desativa o usuário bootstrap quando o primeiro usuário real é criado
+        if (email !== 'admin@barbeiroon.com') {
+            const User = require('../models/User');
+            await User.update({ isActive: false }, { where: { email: 'admin@barbeiroon.com', tenantId } });
+        }
+
         res.status(201).json({
             message: 'Usuário registrado com sucesso', 
             user: {
