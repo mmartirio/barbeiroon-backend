@@ -11,8 +11,8 @@ const PixInvoice = require('../models/PixInvoice');
 const { generatePixEMV } = require('../utils/pixGenerator');
 const onboardingService = require('../services/tenantOnboardingService');
 
-const BOOTSTRAP_EMAIL    = 'perfil@barbeiroon.com';
-const BOOTSTRAP_PASSWORD = 'perfil@123';
+const BOOTSTRAP_PASSWORD = 'barbeiro@123';
+const bootstrapEmail = (slug) => `cliente.${slug}@barbeiroon.com`;
 
 const SECRET = process.env.JWT_SECRET || 'meu-barbeiro-secret';
 
@@ -262,9 +262,10 @@ exports.createTenant = async (req, res) => {
         const adminGroup = groups.find(g => g.name === 'Administrador');
 
         // Cria usuário bootstrap para acesso inicial do tenant
+        const bsEmail = bootstrapEmail(slug);
         await onboardingService.createAdminUser(tenant.id, adminGroup.id, {
             name: 'Administrador',
-            email: BOOTSTRAP_EMAIL,
+            email: bsEmail,
             password: BOOTSTRAP_PASSWORD,
         }, transaction);
 
@@ -273,7 +274,7 @@ exports.createTenant = async (req, res) => {
         res.status(201).json({
             ...tenant.toJSON(),
             bootstrapCredentials: {
-                email: BOOTSTRAP_EMAIL,
+                email: bsEmail,
                 password: BOOTSTRAP_PASSWORD,
             },
         });

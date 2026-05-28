@@ -193,10 +193,11 @@ exports.register = async (req, res) => {
         });
         await syncBarberToProfessional(newUser, tenantId);
 
-        // Desativa o usuário bootstrap quando o primeiro usuário real é criado
-        if (email !== 'perfil@barbeiroon.com') {
+        // Exclui o usuário bootstrap ao criar o primeiro usuário real
+        if (!/^cliente\..+@barbeiroon\.com$/.test(email)) {
+            const { Op } = require('sequelize');
             const User = require('../models/User');
-            await User.update({ isActive: false }, { where: { email: 'perfil@barbeiroon.com', tenantId } });
+            await User.destroy({ where: { email: { [Op.like]: 'cliente.%@barbeiroon.com' }, tenantId } });
         }
 
         res.status(201).json({
