@@ -251,6 +251,24 @@ app.use((err, req, res, next) => {
             }
         }
 
+        // Migração: remove índice único de cnpj na tabela tenants (cnpj é opcional)
+        try {
+            const cnpjIdx = await sequelize.query(
+                `SELECT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tenants'
+                 AND COLUMN_NAME = 'cnpj' AND NON_UNIQUE = 0
+                 GROUP BY INDEX_NAME HAVING COUNT(*) = 1`,
+                { type: sequelize.constructor.QueryTypes.SELECT }
+            );
+            for (const row of cnpjIdx) {
+                const idxName = row.INDEX_NAME || row.index_name;
+                await sequelize.query(`ALTER TABLE \`tenants\` DROP INDEX \`${idxName}\``);
+                console.log(`✅ Índice único '${idxName}' removido de tenants.cnpj`);
+            }
+        } catch (e) {
+            console.warn('⚠️ Migração unique cnpj tenants:', e.message);
+        }
+
         // Migração: muda unique de email global para composto (email, tenant_id) em user
         try {
             const singleEmailIdx = await sequelize.query(

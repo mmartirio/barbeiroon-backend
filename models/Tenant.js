@@ -27,7 +27,6 @@ Tenant.init({
     cnpj: {
         type: DataTypes.STRING(18),
         allowNull: true,
-        unique: true,
         comment: 'CNPJ formatado: 00.000.000/0000-00'
     },
     slug: {

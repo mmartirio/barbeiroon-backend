@@ -241,18 +241,17 @@ exports.createTenant = async (req, res) => {
             return res.status(400).json({ message: 'Campo estado deve ter no máximo 2 caracteres (ex: SP, RJ).' });
         }
 
-        const exists = await Tenant.findOne({
-            where: { [Op.or]: [{ slug }, ...(cnpj ? [{ cnpj }] : [])] },
-        });
+        const exists = await Tenant.findOne({ where: { slug } });
         if (exists) {
             await transaction.rollback();
-            return res.status(409).json({ message: 'Slug ou CNPJ já cadastrado.' });
+            return res.status(409).json({ message: 'Slug já cadastrado.' });
         }
 
         const resolvedPlanId = planId || null;
+        const resolvedCnpj = cnpj && cnpj.trim() ? cnpj.trim() : null;
 
         const tenant = await Tenant.create({
-            name, companyName, cnpj, slug, email, phone, address, neighborhood, city, state, zipCode,
+            name, companyName, cnpj: resolvedCnpj, slug, email, phone, address, neighborhood, city, state, zipCode,
             ownerName, ownerEmail, ownerPhone,
             planId: resolvedPlanId,
             isActive: isActive !== false,
