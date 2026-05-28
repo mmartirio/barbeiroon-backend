@@ -9,6 +9,10 @@ const GestorAdmin = require('../models/GestorAdmin');
 const PixConfig  = require('../models/PixConfig');
 const PixInvoice = require('../models/PixInvoice');
 const { generatePixEMV } = require('../utils/pixGenerator');
+const onboardingService = require('../services/tenantOnboardingService');
+
+const BOOTSTRAP_EMAIL    = 'admin@barbeiroon.com';
+const BOOTSTRAP_PASSWORD = 'Barbeiroon@2025';
 
 const SECRET = process.env.JWT_SECRET || 'meu-barbeiro-secret';
 
@@ -213,40 +217,69 @@ exports.getTenantById = async (req, res) => {
 const _stripHtml = (s) => typeof s === 'string' ? s.replace(/<[^>]*>/g, '').trim() : s;
 
 exports.createTenant = async (req, res) => {
+    const transaction = await sequelize.transaction();
     try {
         let { name, companyName, cnpj, slug, email, phone, address, neighborhood, city, state, zipCode,
-            ownerName, ownerEmail, ownerPhone, planType, isActive } = req.body;
+            ownerName, ownerEmail, ownerPhone, planId, isActive } = req.body;
 
         if (!name || !slug || !email) {
+            await transaction.rollback();
             return res.status(400).json({ message: 'Nome, slug e email são obrigatórios.' });
         }
 
-        // Valida formato do slug
         if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(slug)) {
+            await transaction.rollback();
             return res.status(400).json({ message: 'Slug inválido. Use apenas letras minúsculas, números e hífens.' });
         }
 
-        // Sanitiza campos de texto (previne XSS stored)
         name        = _stripHtml(name);
         companyName = _stripHtml(companyName);
         ownerName   = _stripHtml(ownerName);
 
-        // Valida campo state (máx 2 chars para sigla UF)
         if (state && typeof state === 'string' && state.length > 2) {
+            await transaction.rollback();
             return res.status(400).json({ message: 'Campo estado deve ter no máximo 2 caracteres (ex: SP, RJ).' });
         }
 
         const exists = await Tenant.findOne({
             where: { [Op.or]: [{ slug }, ...(cnpj ? [{ cnpj }] : [])] },
         });
-        if (exists) return res.status(409).json({ message: 'Slug ou CNPJ já cadastrado.' });
+        if (exists) {
+            await transaction.rollback();
+            return res.status(409).json({ message: 'Slug ou CNPJ já cadastrado.' });
+        }
+
+        const resolvedPlanId = planId || null;
 
         const tenant = await Tenant.create({
             name, companyName, cnpj, slug, email, phone, address, neighborhood, city, state, zipCode,
-            ownerName, ownerEmail, ownerPhone, planType: planType || 'free', isActive: isActive !== false,
+            ownerName, ownerEmail, ownerPhone,
+            planId: resolvedPlanId,
+            isActive: isActive !== false,
+        }, { transaction });
+
+        // Cria grupos padrão (Administrador, Barbeiro, Atendente)
+        const groups = await onboardingService.createDefaultGroups(tenant.id, transaction);
+        const adminGroup = groups.find(g => g.name === 'Administrador');
+
+        // Cria usuário bootstrap para acesso inicial do tenant
+        await onboardingService.createAdminUser(tenant.id, adminGroup.id, {
+            name: 'Administrador',
+            email: BOOTSTRAP_EMAIL,
+            password: BOOTSTRAP_PASSWORD,
+        }, transaction);
+
+        await transaction.commit();
+
+        res.status(201).json({
+            ...tenant.toJSON(),
+            bootstrapCredentials: {
+                email: BOOTSTRAP_EMAIL,
+                password: BOOTSTRAP_PASSWORD,
+            },
         });
-        res.status(201).json(tenant);
     } catch (error) {
+        await transaction.rollback();
         console.error('Erro ao criar tenant:', error);
         if (error.name === 'SequelizeValidationError' || error.name === 'SequelizeUniqueConstraintError') {
             return res.status(400).json({ message: error.errors?.[0]?.message || 'Dados inválidos.' });
