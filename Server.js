@@ -129,7 +129,7 @@ app.get('/api/public/plans', async (req, res) => {
     try {
         const Plan = require('./models/Plan');
         const plans = await Plan.findAll({
-            where: { isActive: true },
+            where: { isActive: true, isPublic: true },
             attributes: ['id', 'name', 'description', 'priceMonthly', 'priceAnnual', 'features', 'maxUsers', 'trialMonths', 'sortOrder'],
             order: [['sortOrder', 'ASC'], ['createdAt', 'ASC']],
         });
@@ -212,6 +212,7 @@ app.use((err, req, res, next) => {
             { table: 'plans',       column: 'is_default',        ddl: `ALTER TABLE plans ADD COLUMN is_default TINYINT(1) NOT NULL DEFAULT 0` },
             { table: 'plans',       column: 'trial_months',      ddl: `ALTER TABLE plans ADD COLUMN trial_months INT NULL` },
             { table: 'plans',       column: 'sort_order',        ddl: `ALTER TABLE plans ADD COLUMN sort_order INT NOT NULL DEFAULT 0` },
+            { table: 'plans',       column: 'is_public',         ddl: `ALTER TABLE plans ADD COLUMN is_public TINYINT(1) NOT NULL DEFAULT 1` },
             { table: 'user',        column: 'profile_image_id',  ddl: `ALTER TABLE \`user\` ADD COLUMN \`profile_image_id\` INT NULL` },
         ];
         // Migração: remover FK incorreta de appointment.professional_id → professional

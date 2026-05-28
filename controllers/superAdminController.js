@@ -387,7 +387,7 @@ exports.getPlans = async (req, res) => {
 
 exports.createPlan = async (req, res) => {
     try {
-        const { name, description, priceMonthly, priceAnnual, features, maxUsers, maxAppointments, isActive, trialMonths, sortOrder } = req.body;
+        const { name, description, priceMonthly, priceAnnual, features, maxUsers, maxAppointments, isActive, isDefault, isPublic, trialMonths, sortOrder } = req.body;
         if (!name) return res.status(400).json({ message: 'Nome do plano é obrigatório.' });
 
         const priceM = Number(priceMonthly || 0);
@@ -406,6 +406,8 @@ exports.createPlan = async (req, res) => {
             trialMonths: trialMonths || null,
             sortOrder: sortOrder != null ? Number(sortOrder) : 99,
             isActive: isActive !== false,
+            isDefault: isDefault === true,
+            isPublic: isPublic !== false,
         });
         res.status(201).json(plan);
     } catch (error) {
@@ -419,18 +421,22 @@ exports.updatePlan = async (req, res) => {
         const plan = await Plan.findByPk(req.params.id);
         if (!plan) return res.status(404).json({ message: 'Plano não encontrado.' });
 
-        // Previne alteração arbitrária de isDefault via mass assignment
-        const { isDefault, ...safeUpdates } = req.body;
+        const { priceMonthly, priceAnnual, ...rest } = req.body;
 
-        // Valida preços se fornecidos
-        if (safeUpdates.priceMonthly !== undefined && Number(safeUpdates.priceMonthly) < 0) {
+        if (priceMonthly !== undefined && Number(priceMonthly) < 0) {
             return res.status(400).json({ message: 'Preço não pode ser negativo.' });
         }
-        if (safeUpdates.priceAnnual !== undefined && Number(safeUpdates.priceAnnual) < 0) {
+        if (priceAnnual !== undefined && Number(priceAnnual) < 0) {
             return res.status(400).json({ message: 'Preço não pode ser negativo.' });
         }
 
-        await plan.update(safeUpdates);
+        const updates = {
+            ...rest,
+            ...(priceMonthly !== undefined && { priceMonthly: Number(priceMonthly) }),
+            ...(priceAnnual  !== undefined && { priceAnnual:  Number(priceAnnual)  }),
+        };
+
+        await plan.update(updates);
         res.json(plan);
     } catch (error) {
         res.status(500).json({ message: 'Erro ao atualizar plano.' });

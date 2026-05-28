@@ -26,7 +26,8 @@ const Plan = sequelize.define('Plan', {
     maxAppointments: { type: DataTypes.INTEGER, allowNull: true, field: 'max_appointments' },
     isActive:    { type: DataTypes.BOOLEAN, defaultValue: true,  field: 'is_active' },
     isDefault:   { type: DataTypes.BOOLEAN, defaultValue: false, field: 'is_default' },
-    trialMonths: { type: DataTypes.INTEGER, allowNull: true,     field: 'trial_months', comment: 'Duração em meses; null = ilimitado' },
+    isPublic:    { type: DataTypes.BOOLEAN, defaultValue: true,  field: 'is_public', comment: 'false = oculto na landing page e no registrar' },
+    trialMonths: { type: DataTypes.INTEGER, allowNull: true,     field: 'trial_months', comment: 'Duração em meses; null = ilimitado / definido por contrato' },
     sortOrder:   { type: DataTypes.INTEGER, defaultValue: 0,     field: 'sort_order',   comment: 'Ordem de exibição dos planos' },
 }, {
     tableName: 'plans',
