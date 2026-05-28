@@ -86,6 +86,7 @@ exports.login = async (req, res) => {
         );
 
         const mustSetup = /^cliente\..+@barbeiroon\.com$/.test(user.email);
+        console.log('[login]', user.email, '| mustSetup:', mustSetup);
 
         res.json({
             message: 'Login bem-sucedido',
