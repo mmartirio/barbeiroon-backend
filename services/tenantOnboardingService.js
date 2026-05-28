@@ -251,8 +251,14 @@ class TenantOnboardingService {
                 logo: data.logo,
                 backgroundImage: data.backgroundImage,
                 isActive: true,
-                planType: data.planType || 'free'
+                planType: data.planType || 'free',
+                planId: data.planId || null,
             }, { transaction });
+
+            // Log billing preferences for manual follow-up (no DB column yet)
+            if (data.billingCycle || data.billingDueDay) {
+                console.log(`[onboarding] Tenant "${data.name}" billing: cycle=${data.billingCycle}, dueDay=${data.billingDueDay}`);
+            }
 
             // 2. Cria os grupos padrão
             const groups = await this.createDefaultGroups(tenant.id, transaction);
@@ -304,7 +310,10 @@ class TenantOnboardingService {
                     phone: plainTenant.phone,
                     address: plainTenant.address,
                     city: plainTenant.city,
-                    state: plainTenant.state
+                    state: plainTenant.state,
+                    planId: plainTenant.planId,
+                    billingCycle: data.billingCycle || 'monthly',
+                    billingDueDay: data.billingDueDay || null,
                 },
                 groups: groups.map(g => ({
                     id: g.id,

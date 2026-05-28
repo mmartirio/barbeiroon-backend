@@ -123,6 +123,23 @@ app.use('/api/report', tenantMiddleware, reportRoutes);  // singular
 app.use('/api/reports', tenantMiddleware, reportRoutes); // plural (para compatibilidade)
 
 app.use('/api/whatsapp', whatsappRoutes);
+
+// Public: list active plans (no auth required)
+app.get('/api/public/plans', async (req, res) => {
+    try {
+        const Plan = require('./models/Plan');
+        const plans = await Plan.findAll({
+            where: { isActive: true },
+            attributes: ['id', 'name', 'description', 'priceMonthly', 'priceAnnual', 'features', 'maxUsers', 'trialMonths', 'sortOrder'],
+            order: [['sortOrder', 'ASC'], ['createdAt', 'ASC']],
+        });
+        res.json({ plans });
+    } catch (error) {
+        console.error('Erro ao listar planos públicos:', error);
+        res.status(500).json({ message: 'Erro ao listar planos.' });
+    }
+});
+
 app.use('/api/gestor', superAdminRoutes);
 
 // Rota pública para listar usuários do tenant
