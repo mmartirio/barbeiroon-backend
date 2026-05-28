@@ -52,6 +52,8 @@ const ALLOWED_ORIGINS = [
     'http://localhost',
     'http://localhost:80',
     'http://192.168.0.10:3001',
+    'https://barbeiroon.com',
+    'https://www.barbeiroon.com',
     // Vercel — adicione a URL exata do seu projeto após o deploy
     'https://barbeiroon.vercel.app',
     // Preview deployments da Vercel
