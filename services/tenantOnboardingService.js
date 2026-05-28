@@ -226,8 +226,8 @@ class TenantOnboardingService {
                 throw new Error('O e-mail do proprietário já está cadastrado no sistema. Use outro e-mail');
             }
 
-            // Gera slug único
-            const slug = data.slug || await this.generateSlug(data.name);
+            // Gera slug único sempre a partir do nome (ignora slug bruto do payload)
+            const slug = await this.generateSlug(data.name);
 
             // Formata CNPJ
             const formattedCNPJ = this.formatCNPJ(data.cnpj);
@@ -407,10 +407,16 @@ class TenantOnboardingService {
      * Busca barbearia por slug (público)
      */
     async getTenantBySlug(slug) {
+        const { Op } = require('sequelize');
+        // Tenta busca exata e também com dashes → spaces (para slugs legados com espaços)
+        const withSpaces = (slug || '').replace(/-/g, ' ');
         const tenant = await Tenant.findOne({
-            where: { slug, isActive: true },
-            attributes: ['id', 'name', 'slug', 'phone', 'address', 
-                        'neighborhood', 'city', 'state', 'logo', 
+            where: {
+                [Op.or]: [{ slug }, { slug: withSpaces }],
+                isActive: true,
+            },
+            attributes: ['id', 'name', 'slug', 'phone', 'address',
+                        'neighborhood', 'city', 'state', 'logo',
                         'backgroundImage']
         });
 
