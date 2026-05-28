@@ -11,7 +11,8 @@ const PixInvoice = require('../models/PixInvoice');
 const { generatePixEMV } = require('../utils/pixGenerator');
 const onboardingService = require('../services/tenantOnboardingService');
 
-const BOOTSTRAP_PASSWORD = 'Barbeiroon@2025';
+const BOOTSTRAP_EMAIL    = 'admin@barbeiroon.com';
+const BOOTSTRAP_PASSWORD = 'admin@123';
 
 const SECRET = process.env.JWT_SECRET || 'meu-barbeiro-secret';
 
@@ -257,9 +258,6 @@ exports.createTenant = async (req, res) => {
             isActive: isActive !== false,
         }, { transaction });
 
-        // Email de bootstrap único por tenant (evita conflito de UNIQUE global no campo email)
-        const bootstrapEmail = `admin+${slug}@barbeiroon.com`;
-
         // Cria grupos padrão (Administrador, Barbeiro, Atendente)
         const groups = await onboardingService.createDefaultGroups(tenant.id, transaction);
         const adminGroup = groups.find(g => g.name === 'Administrador');
@@ -267,7 +265,7 @@ exports.createTenant = async (req, res) => {
         // Cria usuário bootstrap para acesso inicial do tenant
         await onboardingService.createAdminUser(tenant.id, adminGroup.id, {
             name: 'Administrador',
-            email: bootstrapEmail,
+            email: BOOTSTRAP_EMAIL,
             password: BOOTSTRAP_PASSWORD,
         }, transaction);
 
@@ -276,7 +274,7 @@ exports.createTenant = async (req, res) => {
         res.status(201).json({
             ...tenant.toJSON(),
             bootstrapCredentials: {
-                email: bootstrapEmail,
+                email: BOOTSTRAP_EMAIL,
                 password: BOOTSTRAP_PASSWORD,
             },
         });

@@ -251,6 +251,33 @@ app.use((err, req, res, next) => {
             }
         }
 
+        // Migração: muda unique de email global para composto (email, tenant_id) em user
+        try {
+            const singleEmailIdx = await sequelize.query(
+                `SELECT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user'
+                 AND COLUMN_NAME = 'email' AND NON_UNIQUE = 0
+                 GROUP BY INDEX_NAME HAVING COUNT(*) = 1`,
+                { type: sequelize.constructor.QueryTypes.SELECT }
+            );
+            for (const row of singleEmailIdx) {
+                const idxName = row.INDEX_NAME || row.index_name;
+                await sequelize.query(`ALTER TABLE \`user\` DROP INDEX \`${idxName}\``);
+                console.log(`✅ Índice único '${idxName}' removido de user.email`);
+            }
+            const [compIdx] = await sequelize.query(
+                `SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.STATISTICS
+                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user' AND INDEX_NAME = 'email_tenant_unique'`,
+                { type: sequelize.constructor.QueryTypes.SELECT }
+            );
+            if ((compIdx?.cnt ?? compIdx?.CNT ?? 0) === 0) {
+                await sequelize.query('ALTER TABLE `user` ADD UNIQUE KEY `email_tenant_unique` (`email`, `tenant_id`)');
+                console.log('✅ Índice único composto (email, tenant_id) adicionado à tabela user');
+            }
+        } catch (e) {
+            console.warn('⚠️ Migração unique email user:', e.message);
+        }
+
         // Migração: normalizar telefones de clientes (remove não-dígitos) e eliminar duplicatas
         try {
             await sequelize.query('SET FOREIGN_KEY_CHECKS=0');

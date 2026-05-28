@@ -15,7 +15,6 @@ User.init({
     },
     email: {
         type: DataTypes.STRING(100),
-        unique: true,
         allowNull: false,
     },
     password: {
@@ -60,6 +59,9 @@ User.init({
     modelName: 'User',
     tableName: 'user',
     timestamps: true,
+    indexes: [
+        { unique: true, fields: ['email', 'tenant_id'], name: 'email_tenant_unique' },
+    ],
 });
 
 module.exports = User;
