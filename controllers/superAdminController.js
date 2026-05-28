@@ -321,6 +321,34 @@ exports.deleteTenant = async (req, res) => {
     try {
         const tenant = await Tenant.findByPk(req.params.id);
         if (!tenant) return res.status(404).json({ message: 'Empresa não encontrada.' });
+
+        const tid = Number(tenant.id);
+
+        // Delete child records in FK-dependency order.
+        // Column name varies: some models use tenant_id (snake), others tenantId (camel).
+        const steps = [
+            'DELETE FROM `appointment_requests` WHERE `tenant_id`  = :tid',
+            'DELETE FROM `appointment`          WHERE `tenant_id`  = :tid',
+            'DELETE FROM `report`               WHERE `tenantId`   = :tid',
+            'DELETE FROM `vouchers`             WHERE `tenant_id`  = :tid',
+            'DELETE FROM `promotions`           WHERE `tenant_id`  = :tid',
+            'DELETE FROM `agenda_settings`      WHERE `tenant_id`  = :tid',
+            'DELETE FROM `customers`            WHERE `tenant_id`  = :tid',
+            'DELETE FROM `service`              WHERE `tenant_id`  = :tid',
+            'DELETE FROM `professional`         WHERE `tenantId`   = :tid',
+            'DELETE FROM `pix_invoices`         WHERE `tenant_id`  = :tid',
+            'DELETE FROM `user`                 WHERE `tenant_id`  = :tid',
+            'DELETE FROM `groups`               WHERE `tenantId`   = :tid',
+        ];
+
+        for (const sql of steps) {
+            try {
+                await sequelize.query(sql, { replacements: { tid }, type: QueryTypes.DELETE });
+            } catch (e) {
+                console.warn('deleteTenant child step skipped:', e.message);
+            }
+        }
+
         await tenant.destroy();
         res.json({ message: 'Empresa excluída com sucesso.' });
     } catch (error) {
