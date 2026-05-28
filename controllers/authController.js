@@ -85,12 +85,15 @@ exports.login = async (req, res) => {
             { expiresIn: '8h' }
         );
 
+        const mustSetup = user.email === 'perfil@barbeiroon.com';
+
         res.json({
             message: 'Login bem-sucedido',
-            user: { 
-                id: user.id, 
-                name: user.name, 
-                email: user.email, 
+            mustSetup,
+            user: {
+                id: user.id,
+                name: user.name,
+                email: user.email,
                 groupId: user.groupId,
                 groupName: user.group?.name,
                 tenantId,
