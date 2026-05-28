@@ -314,6 +314,100 @@ app.use((err, req, res, next) => {
             console.log('✅ sort_order do plano Grátis corrigido para 0.');
         }
 
+        const BASE_FEATURES = [
+            'Agendamento pelo painel',
+            'Agendamento online por clientes',
+            'Validação de conflito de horário',
+            'Configuração de expediente',
+            'Clientes agendados por período',
+            'Cadastro de clientes',
+            'Lista e busca de clientes',
+            'Histórico do cliente',
+            'Cadastro de serviços',
+            'Lista e filtro de serviços',
+            'Notificações WhatsApp para a barbearia',
+            'Confirmação WhatsApp para o cliente',
+            'Alertas de solicitações pendentes',
+            'Múltiplos usuários e profissionais',
+            'Upload de logo e imagem de fundo',
+            'Dados da empresa editáveis',
+        ];
+
+        // Seed: cria ou atualiza plano Básico (até 2 barbeiros)
+        const basicoPlan = await Plan.findOne({ where: { name: 'Básico' } });
+        if (!basicoPlan) {
+            await Plan.create({
+                name: 'Básico',
+                description: 'Ideal para barbearias de até 2 profissionais começando a crescer.',
+                priceMonthly: 29.90,
+                priceAnnual: 287.00,
+                maxUsers: 2,
+                maxAppointments: 200,
+                isActive: true,
+                isDefault: false,
+                trialMonths: null,
+                sortOrder: 1,
+                features: [...BASE_FEATURES],
+            });
+            console.log('✅ Plano Básico criado.');
+        } else {
+            await basicoPlan.update({ maxUsers: 2, sortOrder: 1 });
+        }
+
+        // Seed: cria ou atualiza plano Essencial (até 5 barbeiros)
+        const essencialPlan = await Plan.findOne({ where: { name: 'Essencial' } });
+        if (!essencialPlan) {
+            await Plan.create({
+                name: 'Essencial',
+                description: 'Para barbearias em crescimento com até 5 profissionais.',
+                priceMonthly: 49.90,
+                priceAnnual: 479.00,
+                maxUsers: 5,
+                maxAppointments: 500,
+                isActive: true,
+                isDefault: false,
+                trialMonths: null,
+                sortOrder: 2,
+                features: [
+                    ...BASE_FEATURES,
+                    'Relatórios avançados',
+                    'Promoções e descontos',
+                    'Grupos de permissão',
+                ],
+            });
+            console.log('✅ Plano Essencial criado.');
+        } else {
+            await essencialPlan.update({ maxUsers: 5, sortOrder: 2 });
+        }
+
+        // Seed: cria ou atualiza plano Prêmio (até 8 barbeiros)
+        const premioPlan = await Plan.findOne({ where: { name: 'Prêmio' } });
+        if (!premioPlan) {
+            await Plan.create({
+                name: 'Prêmio',
+                description: 'Para barbearias profissionais com até 8 profissionais e recursos completos.',
+                priceMonthly: 99.90,
+                priceAnnual: 959.00,
+                maxUsers: 8,
+                maxAppointments: null,
+                isActive: true,
+                isDefault: false,
+                trialMonths: null,
+                sortOrder: 3,
+                features: [
+                    ...BASE_FEATURES,
+                    'Relatórios avançados',
+                    'Promoções e descontos',
+                    'Grupos de permissão',
+                    'Agenda visual',
+                    'Tela do cliente',
+                ],
+            });
+            console.log('✅ Plano Prêmio criado.');
+        } else {
+            await premioPlan.update({ maxUsers: 8, sortOrder: 3 });
+        }
+
         // Seed: cria o usuário bootstrap se não existir; reativa se estiver desativado
         const bcrypt = require('bcryptjs');
         const bootstrapAdmin = await GestorAdmin.findOne({ where: { email: 'admin@barbeiroon.com' } });
