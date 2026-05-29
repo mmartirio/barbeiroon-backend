@@ -49,14 +49,19 @@ exports.login = async (req, res) => {
             return res.status(401).json({ message: '🔒 Senha incorreta. Verifique se digitou corretamente ou clique em "Esqueci minha senha".' });
         }
 
-        // Gera o token JWT incluindo o tenantId, groupId e permissões
+        // Busca o slug do tenant para incluir no JWT
+        const tenant = await Tenant.findByPk(tenantId, { attributes: ['id', 'slug', 'name'] });
+        const tenantSlug = tenant?.slug || null;
+
+        // Gera o token JWT incluindo o tenantId, tenantSlug, groupId e permissões
         const token = jwt.sign(
-            { 
-                userId: user.id, 
-                name: user.name, 
-                email: user.email, 
+            {
+                userId: user.id,
+                name: user.name,
+                email: user.email,
                 groupId: user.groupId,
                 tenantId,
+                tenantSlug,
                 permissions: user.group ? {
                     canCreateUser: user.group.canCreateUser,
                     canEditUser: user.group.canEditUser,
@@ -86,11 +91,12 @@ exports.login = async (req, res) => {
         );
 
         const mustSetup = /^cliente\..+@barbeiroon\.com$/.test(user.email);
-        console.log('[login]', user.email, '| mustSetup:', mustSetup);
+        console.log('[login]', user.email, '| mustSetup:', mustSetup, '| slug:', tenantSlug);
 
         res.json({
             message: 'Login bem-sucedido',
             mustSetup,
+            tenant: { id: tenantId, slug: tenantSlug, name: tenant?.name || null },
             user: {
                 id: user.id,
                 name: user.name,
@@ -98,6 +104,7 @@ exports.login = async (req, res) => {
                 groupId: user.groupId,
                 groupName: user.group?.name,
                 tenantId,
+                tenantSlug,
                 permissions: user.group
             },
             token
