@@ -2,6 +2,7 @@ const Appointment = require('../models/Appointment');
 const Customer = require('../models/Customer');
 const Service = require('../models/Service');
 const Professional = require('../models/Professional');
+const Tenant = require('../models/Tenant');
 const WhatsAppService = require('./whatsappService');
 const { Op } = require('sequelize');
 
@@ -53,6 +54,7 @@ class ReminderService {
                     { model: Customer, as: 'customer', attributes: ['name', 'phone'] },
                     { model: Service, as: 'service', attributes: ['name'] },
                     { model: Professional, as: 'professional', attributes: ['name'] },
+                    { model: Tenant, as: 'tenant', attributes: ['slug'] },
                 ],
             });
         } catch {
@@ -65,6 +67,7 @@ class ReminderService {
                 include: [
                     { model: Customer, as: 'customer', attributes: ['name', 'phone'] },
                     { model: Service, as: 'service', attributes: ['name'] },
+                    { model: Tenant, as: 'tenant', attributes: ['slug'] },
                 ],
             });
         }
@@ -86,6 +89,7 @@ class ReminderService {
                     professionalName: plain.professional?.name,
                     appointmentDate: plain.appointmentDate,
                     appointmentTime: String(plain.appointmentTime || '').slice(0, 5),
+                    instanceName: plain.tenant?.slug,
                 });
 
                 if (result?.success) sent++;

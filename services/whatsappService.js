@@ -14,10 +14,10 @@ class WhatsAppService {
     }
 
     // Roteador principal — escolhe o provedor pelo env WHATSAPP_PROVIDER
-    static async _send(to, message) {
+    static async _send(to, message, instanceName) {
         const provider = String(process.env.WHATSAPP_PROVIDER || 'evolution').toLowerCase();
         switch (provider) {
-            case 'evolution':  return this.sendViaEvolution(to, message);
+            case 'evolution':  return this.sendViaEvolution(to, message, instanceName);
             case 'meta':       return this.sendViaMeta(to, message);
             case 'callmebot':  return this.sendViaCallMeBot(to, message);
             default:           return { success: false, skipped: true, reason: 'unknown-provider' };
@@ -26,7 +26,7 @@ class WhatsAppService {
 
     // ─── Mensagens de negócio ─────────────────────────────────────────────────
 
-    static async sendConfirmationMessage({ to, customerName, serviceName, professionalName, appointmentDate, appointmentTime, servicePrice }) {
+    static async sendConfirmationMessage({ to, customerName, serviceName, professionalName, appointmentDate, appointmentTime, servicePrice, instanceName }) {
         const phone = this.normalizePhone(to);
         if (!phone) return { success: false, skipped: true, reason: 'no-phone' };
 
@@ -48,10 +48,10 @@ class WhatsAppService {
             'Em caso de dúvidas, entre em contato conosco.',
         ].join('\n');
 
-        return this._send(phone, message);
+        return this._send(phone, message, instanceName);
     }
 
-    static async sendReminderMessage({ to, customerName, serviceName, professionalName, appointmentDate, appointmentTime }) {
+    static async sendReminderMessage({ to, customerName, serviceName, professionalName, appointmentDate, appointmentTime, instanceName }) {
         const phone = this.normalizePhone(to);
         if (!phone) return { success: false, skipped: true, reason: 'no-phone' };
 
@@ -68,10 +68,10 @@ class WhatsAppService {
             'Até logo! 😊',
         ].join('\n');
 
-        return this._send(phone, message);
+        return this._send(phone, message, instanceName);
     }
 
-    static async sendCancellationMessage({ to, customerName, appointmentDate, appointmentTime, reason }) {
+    static async sendCancellationMessage({ to, customerName, appointmentDate, appointmentTime, reason, instanceName }) {
         const phone = this.normalizePhone(to);
         if (!phone) return { success: false, skipped: true, reason: 'no-phone' };
 
@@ -89,7 +89,7 @@ class WhatsAppService {
         lines.push('', 'Entre em contato para reagendar.');
         const message = lines.join('\n');
 
-        return this._send(phone, message);
+        return this._send(phone, message, instanceName);
     }
 
     // Mantida para compatibilidade — envia resumo do atendimento ao tenant
@@ -108,10 +108,10 @@ class WhatsAppService {
 
     // ─── Provedores ───────────────────────────────────────────────────────────
 
-    static async sendViaEvolution(to, message) {
+    static async sendViaEvolution(to, message, instanceName) {
         const baseUrl = process.env.EVOLUTION_API_URL;
         const apiKey  = process.env.EVOLUTION_API_KEY;
-        const instance = process.env.EVOLUTION_INSTANCE || 'meu-barbeiro';
+        const instance = instanceName || process.env.EVOLUTION_INSTANCE || 'meu-barbeiro';
 
         if (!baseUrl || !apiKey) {
             return { success: false, skipped: true, reason: 'missing-evolution-config' };

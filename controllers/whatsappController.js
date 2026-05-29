@@ -33,7 +33,7 @@ const connectAndGetQr = async (instanceName) => {
 
 // GET /api/whatsapp/status
 exports.getStatus = async (req, res) => {
-    const instance = process.env.EVOLUTION_INSTANCE || 'meu-barbeiro';
+    const instance = req.tenant?.slug || process.env.EVOLUTION_INSTANCE || 'meu-barbeiro';
 
     if (!process.env.EVOLUTION_API_URL || !process.env.EVOLUTION_API_KEY) {
         return res.json({ configured: false, connected: false, provider: process.env.WHATSAPP_PROVIDER || 'evolution' });
@@ -61,7 +61,7 @@ exports.getStatus = async (req, res) => {
 
 // GET /api/whatsapp/qrcode
 exports.getQrCode = async (req, res) => {
-    const instance = process.env.EVOLUTION_INSTANCE || 'meu-barbeiro';
+    const instance = req.tenant?.slug || process.env.EVOLUTION_INSTANCE || 'meu-barbeiro';
 
     try {
         const existing = await fetchInstanceData(instance);
@@ -126,7 +126,7 @@ exports.getQrCode = async (req, res) => {
 
 // DELETE /api/whatsapp/disconnect
 exports.disconnect = async (req, res) => {
-    const instance = process.env.EVOLUTION_INSTANCE || 'meu-barbeiro';
+    const instance = req.tenant?.slug || process.env.EVOLUTION_INSTANCE || 'meu-barbeiro';
     try {
         await evolutionFetch(`/instance/logout/${instance}`, { method: 'DELETE' });
         res.json({ message: 'Desconectado com sucesso.' });

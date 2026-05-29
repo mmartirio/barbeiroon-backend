@@ -258,6 +258,7 @@ exports.create = async (req, res) => {
                 professionalName: createdPlain?.professional?.name || barber?.name,
                 appointmentDate: createdPlain?.appointmentDate,
                 appointmentTime: String(createdPlain?.appointmentTime || '').slice(0, 5),
+                instanceName: req.tenant?.slug,
             });
         } catch (err) {
             console.error('Falha ao enviar confirmacao WhatsApp ao cliente:', err.message);
@@ -450,6 +451,7 @@ exports.cancelOwn = async (req, res) => {
                     appointmentDate: apptPlain?.appointmentDate,
                     appointmentTime: String(apptPlain?.appointmentTime || '').slice(0, 5),
                     reason: reason || null,
+                    instanceName: req.tenant?.slug,
                 });
             } catch (err) {
                 console.error('Falha ao enviar cancelamento WhatsApp ao cliente:', err.message);
@@ -760,6 +762,7 @@ exports.approveRequest = async (req, res) => {
                 appointmentDate: request.appointmentDate,
                 appointmentTime: request.appointmentTime,
                 servicePrice: service?.price || null,
+                instanceName: req.tenant?.slug,
             });
         } catch (e) {
             console.warn('[approveRequest] falha ao enviar WhatsApp (não crítico):', e.message);
