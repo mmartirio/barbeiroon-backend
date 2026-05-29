@@ -1,4 +1,5 @@
 const ReminderService = require('../services/reminderService');
+const Tenant = require('../models/Tenant');
 
 const evolutionFetch = async (path, options = {}) => {
     const baseUrl = process.env.EVOLUTION_API_URL;
@@ -40,7 +41,17 @@ exports.getStatus = async (req, res) => {
     }
 
     try {
-        const found = await fetchInstanceData(instance);
+        let found = await fetchInstanceData(instance);
+
+        // Se a instância ainda não existe, cria agora (desconectada)
+        if (!found) {
+            console.log(`[WhatsApp] Instância "${instance}" não encontrada — criando automaticamente...`);
+            await evolutionFetch('/instance/create', {
+                method: 'POST',
+                body: JSON.stringify({ instanceName: instance, integration: 'WHATSAPP-BAILEYS' }),
+            }).catch(() => {});
+            found = await fetchInstanceData(instance).catch(() => null);
+        }
 
         // Conectado = connectionStatus "open" + integração WHATSAPP-BAILEYS
         const connectionStatus = found?.connectionStatus || 'not_found';
@@ -142,5 +153,47 @@ exports.testReminder = async (req, res) => {
         res.json({ message: 'Lembretes disparados com sucesso.' });
     } catch (err) {
         res.status(500).json({ message: err.message });
+    }
+};
+
+// Cria instâncias Evolution para todos os tenants ativos que ainda não têm uma
+// Chamado no boot do servidor — garante que tenants existentes sejam provisionados
+exports.provisionAllInstances = async () => {
+    if (!process.env.EVOLUTION_API_URL || !process.env.EVOLUTION_API_KEY) return;
+
+    try {
+        const tenants = await Tenant.findAll({
+            where: { isActive: true },
+            attributes: ['id', 'slug'],
+        });
+
+        const r = await evolutionFetch('/instance/fetchInstances');
+        const existing = await r.json().catch(() => []);
+        const existingSlugs = new Set(
+            Array.isArray(existing) ? existing.map(i => i.name) : []
+        );
+
+        let created = 0;
+        for (const tenant of tenants) {
+            if (!tenant.slug || existingSlugs.has(tenant.slug)) continue;
+            try {
+                await evolutionFetch('/instance/create', {
+                    method: 'POST',
+                    body: JSON.stringify({ instanceName: tenant.slug, integration: 'WHATSAPP-BAILEYS' }),
+                });
+                console.log(`[WhatsApp] Instância criada para tenant: ${tenant.slug}`);
+                created++;
+            } catch (e) {
+                console.warn(`[WhatsApp] Falha ao criar instância para ${tenant.slug}:`, e.message);
+            }
+        }
+
+        if (created > 0) {
+            console.log(`[WhatsApp] ${created} instância(s) criada(s) para tenants existentes.`);
+        } else {
+            console.log('[WhatsApp] Todos os tenants já possuem instância na Evolution API.');
+        }
+    } catch (err) {
+        console.warn('[WhatsApp] provisionAllInstances falhou (não crítico):', err.message);
     }
 };

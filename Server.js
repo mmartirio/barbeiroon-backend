@@ -515,6 +515,8 @@ app.use((err, req, res, next) => {
         app.listen(PORT, '0.0.0.0', () => {
             console.log(`🚀 Servidor rodando na porta ${PORT}`);
             ReminderService.start();
+            const { provisionAllInstances } = require('./controllers/whatsappController');
+            provisionAllInstances();
         });
     } catch (err) {
         console.error('❌ Erro ao conectar/sincronizar banco de dados:', err);
