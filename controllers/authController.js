@@ -49,8 +49,16 @@ exports.login = async (req, res) => {
             return res.status(401).json({ message: '🔒 Senha incorreta. Verifique se digitou corretamente ou clique em "Esqueci minha senha".' });
         }
 
-        // Busca o slug do tenant para incluir no JWT
-        const tenant = await Tenant.findByPk(tenantId, { attributes: ['id', 'slug', 'name'] });
+        // Busca o tenant para verificar status e incluir slug no JWT
+        const tenant = await Tenant.findByPk(tenantId, { attributes: ['id', 'slug', 'name', 'isActive', 'scheduledDeleteAt'] });
+
+        if (!tenant || !tenant.isActive) {
+            return res.status(403).json({
+                message: '🚫 Esta conta está desativada. Entre em contato com o suporte para reativar seu acesso.',
+                accountDisabled: true,
+            });
+        }
+
         const tenantSlug = tenant?.slug || null;
 
         // Gera o token JWT incluindo o tenantId, tenantSlug, groupId e permissões
