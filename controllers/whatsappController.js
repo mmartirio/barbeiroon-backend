@@ -135,6 +135,56 @@ exports.getQrCode = async (req, res) => {
     }
 };
 
+// POST /api/whatsapp/pairingcode
+exports.getPairingCode = async (req, res) => {
+    const instance = req.tenant?.slug || process.env.EVOLUTION_INSTANCE || 'meu-barbeiro';
+    const { phone } = req.body || {};
+    if (!phone) return res.status(400).json({ message: 'Número de telefone obrigatório.' });
+
+    const digits = String(phone).replace(/\D/g, '');
+    const number = digits.startsWith('55') ? digits : `55${digits}`;
+    if (number.length < 12) return res.status(400).json({ message: 'Número de telefone inválido.' });
+
+    try {
+        // Garante que a instância existe e está desconectada (pronta para parear)
+        const existing = await fetchInstanceData(instance);
+        if (existing?.connectionStatus === 'open') {
+            return res.json({ connected: true, message: 'WhatsApp já está conectado.' });
+        }
+
+        // Se não existe, cria
+        if (!existing) {
+            await evolutionFetch('/instance/create', {
+                method: 'POST',
+                body: JSON.stringify({ instanceName: instance, integration: 'WHATSAPP-BAILEYS' }),
+            });
+            await new Promise(ok => setTimeout(ok, 2000));
+        }
+
+        // Solicita o pairing code para o número informado
+        const r = await evolutionFetch(`/instance/pairingCode/${instance}`, {
+            method: 'POST',
+            body: JSON.stringify({ number }),
+        });
+        const rawText = await r.text();
+        let data = {};
+        try { data = JSON.parse(rawText); } catch { data = {}; }
+        console.log('[WhatsApp] PairingCode response:', rawText.slice(0, 300));
+
+        if (r.status >= 400) {
+            return res.status(502).json({ message: data.message || 'Falha ao gerar código de pareamento.' });
+        }
+
+        const code = data.pairingCode || data.code || null;
+        if (!code) return res.status(502).json({ message: 'Código não retornado pela API. Tente novamente.' });
+
+        return res.json({ pairingCode: code });
+    } catch (err) {
+        console.error('[WhatsApp] getPairingCode error:', err.message);
+        res.status(500).json({ message: err.message });
+    }
+};
+
 // DELETE /api/whatsapp/disconnect
 exports.disconnect = async (req, res) => {
     const instance = req.tenant?.slug || process.env.EVOLUTION_INSTANCE || 'meu-barbeiro';
