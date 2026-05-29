@@ -121,7 +121,13 @@ Tenant.init({
         allowNull: true,
         field: 'plan_id',
         comment: 'FK para o plano contratado no gestor'
-    }
+    },
+    scheduledDeleteAt: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        field: 'scheduled_delete_at',
+        comment: 'Quando não nulo, a conta será excluída automaticamente nesta data'
+    },
 }, {
     sequelize,
     modelName: 'Tenant',

@@ -291,7 +291,8 @@ exports.getSettings = async (req, res) => {
             attributes: [
                 'id', 'name', 'companyName', 'cnpj', 'slug', 'email', 'phone',
                 'address', 'neighborhood', 'city', 'state', 'zipCode',
-                'ownerName', 'ownerPhone', 'logo', 'backgroundImage', 'planType'
+                'ownerName', 'ownerPhone', 'logo', 'backgroundImage', 'planType',
+                'isActive', 'scheduledDeleteAt',
             ]
         });
 
@@ -410,5 +411,41 @@ exports.update = async (req, res) => {
     } catch (error) {
         console.error('Erro ao editar barbearia:', error);
         res.status(500).json({ message: 'Erro ao editar barbearia' });
+    }
+};
+
+// POST /api/tenant/me/request-delete
+exports.requestDelete = async (req, res) => {
+    try {
+        const tenant = await Tenant.findByPk(req.tenant.id);
+        if (!tenant) return res.status(404).json({ message: 'Empresa não encontrada.' });
+        if (tenant.scheduledDeleteAt) {
+            return res.status(400).json({ message: 'Conta já está agendada para exclusão.' });
+        }
+        const scheduledDeleteAt = new Date();
+        scheduledDeleteAt.setDate(scheduledDeleteAt.getDate() + 30);
+        await tenant.update({ scheduledDeleteAt, isActive: false });
+        console.log(`[requestDelete] tenant ${tenant.id} (${tenant.slug}) agendado para exclusão em ${scheduledDeleteAt.toISOString()}`);
+        res.json({ message: 'Conta agendada para exclusão em 30 dias.', scheduledDeleteAt });
+    } catch (err) {
+        console.error('[requestDelete]', err.message);
+        res.status(500).json({ message: 'Erro ao solicitar exclusão.' });
+    }
+};
+
+// POST /api/tenant/me/cancel-delete
+exports.cancelDelete = async (req, res) => {
+    try {
+        const tenant = await Tenant.findByPk(req.tenant.id);
+        if (!tenant) return res.status(404).json({ message: 'Empresa não encontrada.' });
+        if (!tenant.scheduledDeleteAt) {
+            return res.status(400).json({ message: 'Conta não está agendada para exclusão.' });
+        }
+        await tenant.update({ scheduledDeleteAt: null, isActive: true });
+        console.log(`[cancelDelete] tenant ${tenant.id} (${tenant.slug}) exclusão cancelada`);
+        res.json({ message: 'Exclusão cancelada. Conta reativada com sucesso.' });
+    } catch (err) {
+        console.error('[cancelDelete]', err.message);
+        res.status(500).json({ message: 'Erro ao cancelar exclusão.' });
     }
 };

@@ -31,6 +31,12 @@ router.get(
     tenantController.getSettings
 );
 
+// Solicitar exclusão da própria conta (fica inativa por 30 dias)
+router.post('/me/request-delete', tenantMiddleware, checkPermission('canManageTenant'), tenantController.requestDelete);
+
+// Cancelar exclusão agendada
+router.post('/me/cancel-delete',  tenantMiddleware, checkPermission('canManageTenant'), tenantController.cancelDelete);
+
 // Atualizar dados da própria barbearia (requer permissão canManageTenant)
 router.put(
     '/settings',

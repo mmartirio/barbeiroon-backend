@@ -4,7 +4,8 @@ const Service = require('../models/Service');
 const Professional = require('../models/Professional');
 const Tenant = require('../models/Tenant');
 const WhatsAppService = require('./whatsappService');
-const { Op } = require('sequelize');
+const { Op, QueryTypes } = require('sequelize');
+const sequelize = require('../config/db');
 
 class ReminderService {
     static start() {
@@ -25,8 +26,50 @@ class ReminderService {
             this.sendTomorrowReminders().catch((err) => {
                 console.error('❌ ReminderService erro:', err.message);
             });
+            this.processScheduledDeletions().catch((err) => {
+                console.error('❌ ReminderService (deletions) erro:', err.message);
+            });
             this._scheduleNext();
         }, delay);
+    }
+
+    static async processScheduledDeletions() {
+        const now = new Date();
+        const tenants = await Tenant.findAll({
+            where: { scheduledDeleteAt: { [Op.lte]: now } },
+            attributes: ['id', 'slug'],
+        });
+
+        if (tenants.length === 0) return;
+        console.log(`🗑️  ReminderService: ${tenants.length} tenant(s) com exclusão agendada vencida.`);
+
+        const steps = [
+            'DELETE FROM `appointment_requests` WHERE `tenant_id`  = :tid',
+            'DELETE FROM `appointment`          WHERE `tenant_id`  = :tid',
+            'DELETE FROM `report`               WHERE `tenantId`   = :tid',
+            'DELETE FROM `vouchers`             WHERE `tenant_id`  = :tid',
+            'DELETE FROM `promotions`           WHERE `tenant_id`  = :tid',
+            'DELETE FROM `agenda_settings`      WHERE `tenant_id`  = :tid',
+            'DELETE FROM `customers`            WHERE `tenant_id`  = :tid',
+            'DELETE FROM `service`              WHERE `tenant_id`  = :tid',
+            'DELETE FROM `professional`         WHERE `tenantId`   = :tid',
+            'DELETE FROM `pix_invoices`         WHERE `tenant_id`  = :tid',
+            'DELETE FROM `user`                 WHERE `tenant_id`  = :tid',
+            'DELETE FROM `groups`               WHERE `tenantId`   = :tid',
+        ];
+
+        for (const tenant of tenants) {
+            const tid = Number(tenant.id);
+            for (const sql of steps) {
+                try {
+                    await sequelize.query(sql, { replacements: { tid }, type: QueryTypes.DELETE });
+                } catch (e) {
+                    console.warn(`[processScheduledDeletions] step skipped for tenant ${tid}:`, e.message);
+                }
+            }
+            await tenant.destroy();
+            console.log(`✅ Tenant ${tenant.slug} (id=${tid}) excluído automaticamente.`);
+        }
     }
 
     static _tomorrowDateStr() {
