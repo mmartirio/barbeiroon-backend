@@ -136,6 +136,9 @@ exports.getQrCode = async (req, res) => {
 };
 
 // POST /api/whatsapp/pairingcode
+// No Evolution API v2, o pairing code é gerado ao criar a instância com o campo
+// "number" preenchido. O Baileys chama requestPairingCode(number) automaticamente
+// no startup. O código é obtido via GET /instance/connect/{instance}.
 exports.getPairingCode = async (req, res) => {
     const instance = req.tenant?.slug || process.env.EVOLUTION_INSTANCE || 'meu-barbeiro';
     const { phone } = req.body || {};
@@ -146,39 +149,50 @@ exports.getPairingCode = async (req, res) => {
     if (number.length < 12) return res.status(400).json({ message: 'Número de telefone inválido.' });
 
     try {
-        // Garante que a instância existe e está desconectada (pronta para parear)
         const existing = await fetchInstanceData(instance);
+
         if (existing?.connectionStatus === 'open') {
             return res.json({ connected: true, message: 'WhatsApp já está conectado.' });
         }
 
-        // Se não existe, cria
-        if (!existing) {
-            await evolutionFetch('/instance/create', {
-                method: 'POST',
-                body: JSON.stringify({ instanceName: instance, integration: 'WHATSAPP-BAILEYS' }),
-            });
-            await new Promise(ok => setTimeout(ok, 2000));
+        // Apaga instância existente para recriar com o número correto.
+        // O campo "number" na criação instrui o Baileys a usar pairing code
+        // em vez de QR Code.
+        if (existing) {
+            console.log(`[WhatsApp] Apagando instância "${instance}" para recriar com number...`);
+            await evolutionFetch(`/instance/delete/${instance}`, { method: 'DELETE' }).catch(() => {});
+            await new Promise(ok => setTimeout(ok, 1500));
         }
 
-        // Solicita o pairing code para o número informado
-        const r = await evolutionFetch(`/instance/pairingCode/${instance}`, {
+        const createRes = await evolutionFetch('/instance/create', {
             method: 'POST',
-            body: JSON.stringify({ number }),
+            body: JSON.stringify({ instanceName: instance, integration: 'WHATSAPP-BAILEYS', number }),
         });
-        const rawText = await r.text();
-        let data = {};
-        try { data = JSON.parse(rawText); } catch { data = {}; }
-        console.log('[WhatsApp] PairingCode response:', rawText.slice(0, 300));
+        if (createRes.status >= 400) {
+            const d = await createRes.json().catch(() => ({}));
+            return res.status(502).json({ message: `Falha ao criar instância: ${d.message || ''}` });
+        }
+        console.log('[WhatsApp] Instância recriada com number:', number);
 
-        if (r.status >= 400) {
-            return res.status(502).json({ message: data.message || 'Falha ao gerar código de pareamento.' });
+        // Aguarda o Baileys inicializar e gerar o código de pareamento
+        await new Promise(ok => setTimeout(ok, 3000));
+
+        // Polling: obtém o pairing code via GET /instance/connect (até 5 tentativas)
+        for (let i = 1; i <= 5; i++) {
+            const r = await evolutionFetch(`/instance/connect/${instance}`);
+            const rawText = await r.text();
+            let data = {};
+            try { data = JSON.parse(rawText); } catch {}
+            console.log(`[WhatsApp] PairingCode tentativa ${i}/5:`, rawText.slice(0, 200));
+
+            if (data.pairingCode) {
+                return res.json({ pairingCode: data.pairingCode });
+            }
+
+            if (i < 5) await new Promise(ok => setTimeout(ok, 2000));
         }
 
-        const code = data.pairingCode || data.code || null;
-        if (!code) return res.status(502).json({ message: 'Código não retornado pela API. Tente novamente.' });
-
-        return res.json({ pairingCode: code });
+        return res.status(502).json({ message: 'Código de pareamento não disponível. Aguarde alguns segundos e tente novamente.' });
     } catch (err) {
         console.error('[WhatsApp] getPairingCode error:', err.message);
         res.status(500).json({ message: err.message });
