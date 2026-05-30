@@ -54,6 +54,16 @@ User.init({
         allowNull: true,
         field: 'profile_image_id',
     },
+    resetCode: {
+        type: DataTypes.STRING(6),
+        allowNull: true,
+        field: 'reset_code',
+    },
+    resetCodeExpires: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        field: 'reset_code_expires',
+    },
 }, {
     sequelize,
     modelName: 'User',

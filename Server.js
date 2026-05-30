@@ -123,6 +123,7 @@ app.use('/api/report', tenantMiddleware, reportRoutes);  // singular
 app.use('/api/reports', tenantMiddleware, reportRoutes); // plural (para compatibilidade)
 
 app.use('/api/whatsapp', whatsappRoutes);
+app.use('/api/support', tenantMiddleware, require('./routes/supportRoutes'));
 
 // Public: list active plans (no auth required)
 app.get('/api/public/plans', async (req, res) => {

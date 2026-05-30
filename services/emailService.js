@@ -261,6 +261,52 @@ class EmailService {
         }
     }
 
+    async sendPasswordResetCode({ email, name, code }) {
+        const mailOptions = {
+            from: this.defaultFrom,
+            to: email,
+            subject: 'Código de verificação — Barbeiro ON',
+            html: `
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8">
+<style>
+  body{font-family:Arial,sans-serif;background:#f4f4f4;margin:0;padding:0}
+  .wrap{max-width:480px;margin:32px auto;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.1)}
+  .hdr{background:#18191a;padding:28px 20px;text-align:center}
+  .hdr img{height:48px}
+  .body{padding:32px 28px;text-align:center}
+  .code{display:inline-block;font-size:36px;font-weight:900;letter-spacing:10px;color:#33FF77;background:#18191a;padding:16px 32px;border-radius:10px;margin:20px 0}
+  .note{color:#888;font-size:13px;margin-top:8px}
+  .ftr{background:#23232b;color:#666;text-align:center;padding:16px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <span style="color:#d4d4d4;font-size:22px;font-weight:900">Barbeiro <span style="color:#33FF77">ON</span></span>
+  </div>
+  <div class="body">
+    <p style="font-size:16px;color:#333">Olá, <strong>${name || 'usuário'}</strong>!</p>
+    <p style="color:#555">Use o código abaixo para redefinir sua senha.<br>Ele expira em <strong>10 minutos</strong>.</p>
+    <div class="code">${code}</div>
+    <p class="note">Se você não solicitou a recuperação, ignore este e-mail.</p>
+  </div>
+  <div class="ftr">&copy; ${new Date().getFullYear()} Barbeiro ON — Este é um e-mail automático.</div>
+</div>
+</body>
+</html>`,
+        };
+        try {
+            const info = await this.transporter.sendMail(mailOptions);
+            console.log('[email] código enviado:', info.messageId);
+            return { success: true };
+        } catch (err) {
+            console.error('[email] erro ao enviar código:', err.message);
+            return { success: false, error: err.message };
+        }
+    }
+
     /**
      * Verifica se o serviço de e-mail está configurado corretamente
      */

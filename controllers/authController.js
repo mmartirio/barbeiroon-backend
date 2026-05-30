@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Group = require('../models/Group');
 const Tenant = require('../models/Tenant');
+const emailService = require('../services/emailService');
 
 // Controlador de Login Multi-Tenant para usuários internos
 exports.login = async (req, res) => {
@@ -120,5 +121,63 @@ exports.login = async (req, res) => {
     } catch (error) {
         console.error('Erro ao realizar login:', error);
         res.status(500).json({ message: 'Erro interno do servidor', error: error.message });
+    }
+};
+
+// POST /api/auth/forgot-password
+exports.forgotPassword = async (req, res) => {
+    const { email } = req.body || {};
+    if (!email) return res.status(400).json({ message: 'E-mail obrigatório.' });
+    const OK = { message: 'Se o e-mail estiver cadastrado, você receberá o código em breve.' };
+    try {
+        const user = await User.findOne({ where: { email: email.toLowerCase().trim() }, attributes: ['id', 'name', 'email'] });
+        if (!user) return res.json(OK);
+
+        const code = String(Math.floor(100000 + Math.random() * 900000));
+        const expires = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+        await user.update({ resetCode: code, resetCodeExpires: expires });
+
+        await emailService.sendPasswordResetCode({ email: user.email, name: user.name, code });
+        console.log('[forgotPassword] código enviado para', user.email);
+        return res.json(OK);
+    } catch (err) {
+        console.error('[forgotPassword]', err.message);
+        res.status(500).json({ message: 'Erro interno.' });
+    }
+};
+
+// POST /api/auth/verify-reset-code
+exports.verifyResetCode = async (req, res) => {
+    const { email, code } = req.body || {};
+    if (!email || !code) return res.status(400).json({ message: 'E-mail e código obrigatórios.' });
+    try {
+        const user = await User.findOne({ where: { email: email.toLowerCase().trim() }, attributes: ['id', 'resetCode', 'resetCodeExpires'] });
+        if (!user || !user.resetCode || user.resetCode !== String(code).trim())
+            return res.status(400).json({ message: 'Código inválido.' });
+        if (new Date() > new Date(user.resetCodeExpires))
+            return res.status(400).json({ message: 'Código expirado. Solicite um novo.' });
+        return res.json({ valid: true });
+    } catch (err) {
+        res.status(500).json({ message: 'Erro interno.' });
+    }
+};
+
+// POST /api/auth/reset-password
+exports.resetPassword = async (req, res) => {
+    const { email, code, newPassword } = req.body || {};
+    if (!email || !code || !newPassword) return res.status(400).json({ message: 'Dados incompletos.' });
+    if (newPassword.length < 6) return res.status(400).json({ message: 'A senha deve ter no mínimo 6 caracteres.' });
+    try {
+        const user = await User.findOne({ where: { email: email.toLowerCase().trim() }, attributes: ['id', 'resetCode', 'resetCodeExpires'] });
+        if (!user || !user.resetCode || user.resetCode !== String(code).trim())
+            return res.status(400).json({ message: 'Código inválido.' });
+        if (new Date() > new Date(user.resetCodeExpires))
+            return res.status(400).json({ message: 'Código expirado. Solicite um novo.' });
+        const hashed = await bcrypt.hash(newPassword, 10);
+        await user.update({ password: hashed, resetCode: null, resetCodeExpires: null });
+        console.log('[resetPassword] senha alterada para', email);
+        return res.json({ message: 'Senha alterada com sucesso!' });
+    } catch (err) {
+        res.status(500).json({ message: 'Erro interno.' });
     }
 };

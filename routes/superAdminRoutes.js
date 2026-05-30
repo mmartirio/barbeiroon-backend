@@ -55,4 +55,12 @@ router.post('/pix/invoices',            ctrl.pixCreateInvoice);
 router.put('/pix/invoices/:id/paid',    ctrl.pixMarkPaid);
 router.delete('/pix/invoices/:id',      ctrl.pixCancelInvoice);
 
+// Suporte / Mesa de chamados
+const support = require('../controllers/supportController');
+router.get('/support/tickets',              support.gestorListTickets);
+router.get('/support/tickets/:id',          support.gestorGetTicket);
+router.patch('/support/tickets/:id/status', support.gestorUpdateStatus);
+router.post('/support/tickets/:id/reply',   support.gestorReply);
+router.get('/support/reports',              support.gestorReports);
+
 module.exports = router;
