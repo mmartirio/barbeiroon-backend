@@ -164,7 +164,9 @@ exports.register = async (req, res) => {
         const limits = getEffectiveLimits(req.tenant);
         if (limits.maxUsers !== null) {
             const User = require('../models/User');
-            const userCount = await User.count({ where: { tenantId, isActive: true } });
+            const { Op } = require('sequelize');
+            // Exclui o bootstrap user da contagem (será removido após criação do primeiro usuário real)
+            const userCount = await User.count({ where: { tenantId, isActive: true, email: { [Op.notLike]: 'cliente.%@barbeiroon.com' } } });
             if (userCount >= limits.maxUsers) {
                 return res.status(403).json({
                     message: `Você atingiu o limite de ${limits.maxUsers} usuário(s) do plano ${limits.planName}. Para cadastrar mais usuários, entre em contato com o suporte ou faça upgrade do seu plano.`,
