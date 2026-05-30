@@ -63,4 +63,10 @@ router.patch('/support/tickets/:id/status', support.gestorUpdateStatus);
 router.post('/support/tickets/:id/reply',   support.gestorReply);
 router.get('/support/reports',              support.gestorReports);
 
+// WhatsApp para o Gestor (usa instância padrão EVOLUTION_INSTANCE)
+const wa = require('../controllers/whatsappController');
+router.get('/whatsapp/status',       wa.getStatus);
+router.get('/whatsapp/qrcode',       wa.getQrCode);
+router.post('/whatsapp/pairingcode', wa.getPairingCode);
+
 module.exports = router;
