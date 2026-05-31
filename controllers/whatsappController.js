@@ -154,9 +154,9 @@ exports.getQrCode = async (req, res) => {
 };
 
 // POST /api/whatsapp/pairingcode
-// Evolution API v2.2.x:
-//   - Se já conectando: chama pairingCode direto (não recria)
-//   - Se fechada/inexistente: recria → connect → aguarda 8s → pairingCode
+// Evolution API v2.2.3: POST /instance/pairingCode não existe.
+// Fluxo correto: criar instância COM number → Baileys chama requestPairingCode()
+// automaticamente → aguardar ~15s → buscar via GET /instance/connect (campo pairingCode)
 exports.getPairingCode = async (req, res) => {
     const instance = req.tenant?.slug || process.env.EVOLUTION_INSTANCE || 'meu-barbeiro';
     const { phone } = req.body || {};
@@ -166,70 +166,48 @@ exports.getPairingCode = async (req, res) => {
     const number = digits.startsWith('55') ? digits : `55${digits}`;
     if (number.length < 12) return res.status(400).json({ message: 'Número de telefone inválido.' });
 
-    const tryPairingCode = async () => {
-        const r = await evolutionFetch(`/instance/pairingCode/${instance}`, {
-            method: 'POST',
-            body: JSON.stringify({ number }),
-        });
-        const text = await r.text();
-        let d = {};
-        try { d = JSON.parse(text); } catch { d = {}; }
-        console.log(`[WhatsApp] [${instance}] pairingCode response (status ${r.status}):`, text.slice(0, 400));
-        return { d, ok: r.status < 400 };
-    };
-
     try {
         const existing = await fetchInstanceData(instance);
-        console.log(`[WhatsApp] [${instance}] status atual: ${existing?.connectionStatus ?? 'não existe'}`);
+        console.log(`[WhatsApp] [${instance}] status: ${existing?.connectionStatus ?? 'não existe'}`);
 
         if (existing?.connectionStatus === 'open') {
             return res.json({ connected: true, message: 'WhatsApp já está conectado.' });
         }
 
-        // Se já está em connecting, tenta o pairing code direto sem recriar
-        if (existing?.connectionStatus === 'connecting') {
-            console.log(`[WhatsApp] [${instance}] já em connecting — tentando pairingCode direto`);
-            const { d } = await tryPairingCode();
-            if (d.pairingCode || d.code) return res.json({ pairingCode: d.pairingCode || d.code });
-            // Se falhou, recria a instância abaixo
-            console.log(`[WhatsApp] [${instance}] pairingCode direto falhou — recriando instância`);
-        }
-
-        // Apaga e recria instância limpa (sem number) para garantir modo QR-waiting
+        // Apaga instância existente para recriar com number
         if (existing) {
-            console.log(`[WhatsApp] [${instance}] Apagando instância...`);
+            console.log(`[WhatsApp] [${instance}] Apagando para recriar com number...`);
             await evolutionFetch(`/instance/delete/${instance}`, { method: 'DELETE' }).catch(() => {});
-            await new Promise(ok => setTimeout(ok, 2500));
+            await new Promise(ok => setTimeout(ok, 2000));
         }
 
+        // Cria instância COM number — instrui Baileys a usar pairing code
         const createRes = await evolutionFetch('/instance/create', {
             method: 'POST',
-            body: JSON.stringify({ instanceName: instance, integration: 'WHATSAPP-BAILEYS' }),
+            body: JSON.stringify({ instanceName: instance, integration: 'WHATSAPP-BAILEYS', number }),
         });
         const createText = await createRes.text();
-        console.log(`[WhatsApp] [${instance}] create (status ${createRes.status}):`, createText.slice(0, 200));
+        console.log(`[WhatsApp] [${instance}] create (${createRes.status}):`, createText.slice(0, 150));
         if (createRes.status >= 400) {
             let d = {}; try { d = JSON.parse(createText); } catch {}
             return res.status(502).json({ message: `Falha ao criar instância: ${d.message || createText}` });
         }
 
-        // Aguarda Evolution API registrar e Baileys iniciar
-        await new Promise(ok => setTimeout(ok, 3000));
+        // Aguarda Baileys conectar ao servidor WA e obter o pairing code (~15s)
+        // Polling via GET /instance/connect — retorna pairingCode quando disponível
+        for (let i = 1; i <= 8; i++) {
+            await new Promise(ok => setTimeout(ok, 3000));
+            const r = await evolutionFetch(`/instance/connect/${instance}`);
+            const text = await r.text();
+            let data = {}; try { data = JSON.parse(text); } catch {}
+            console.log(`[WhatsApp] [${instance}] connect poll [${i}/8]: pairingCode=${data.pairingCode ?? 'null'}`);
 
-        // Connect coloca Baileys em modo QR-waiting
-        const connectText = await evolutionFetch(`/instance/connect/${instance}`)
-            .then(r => r.text()).catch(() => '');
-        console.log(`[WhatsApp] [${instance}] connect:`, connectText.slice(0, 200));
-
-        // Aguarda Baileys atingir modo QR-waiting completo (8s)
-        await new Promise(ok => setTimeout(ok, 8000));
-
-        // Tenta pairing code com até 3 tentativas (3s entre cada)
-        for (let i = 1; i <= 3; i++) {
-            const { d } = await tryPairingCode();
-            if (d.pairingCode || d.code) return res.json({ pairingCode: d.pairingCode || d.code });
-            if (typeof d === 'string' && d.length >= 8) return res.json({ pairingCode: d });
-            if (i < 3) await new Promise(ok => setTimeout(ok, 3000));
+            if (data.connected || data.connectionStatus === 'open') {
+                return res.json({ connected: true });
+            }
+            if (data.pairingCode) {
+                return res.json({ pairingCode: data.pairingCode });
+            }
         }
 
         return res.status(502).json({ message: 'Código de pareamento não disponível. Tente novamente em alguns segundos.' });
