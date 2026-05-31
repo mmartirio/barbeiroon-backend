@@ -106,6 +106,8 @@ app.use('/api/public/professional', publicProfessionalRoutes);
 
 const publicPromotionRoutes = require('./routes/publicPromotionRoutes');
 app.use('/api/public/promotion', publicPromotionRoutes);
+const publicWhatsappRoutes = require('./routes/publicWhatsappRoutes');
+app.use('/api/public/whatsapp', publicWhatsappRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
 // Rotas com tenantMiddleware
